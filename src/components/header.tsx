@@ -120,7 +120,7 @@ const WebsiteHeader = ({
             onClick={() => window.open('https://patreon.com/BenisBoy16', '_blank')}
             className="bg-[#BE3144] p-1 h-11 w-11 flex items-center justify-center"
           >
-            <img src="src/assets/pfp_patreon.png" alt="Patreon" width="36" height="36" className="inline" />
+            <img src="assets/pfp_patreon.png" alt="Patreon" width="36" height="36" className="inline" />
           </button>
         </div>
         <h1

@@ -13,7 +13,7 @@ export const PatreonProvider = ({ children }: { children: ReactNode }) => {
   const CLIENT_ID = 'DCmpYjAt5oF-1poN2N_hW22VXTuz8BNIOPk1yeoctffuvobAJCu8I7N7fKc1ngMp';
   // const REDIRECT_URI = 'https://benis-boy.github.io/SSJ/';
   // TODO set new URL
-  const REDIRECT_URI = 'http://localhost:5173/';
+  const REDIRECT_URI = 'https://benis-boy.github.io/library/';
   const PATREON_OAUTH_URL = `https://www.patreon.com/oauth2/authorize?response_type=code&client_id=${CLIENT_ID}&redirect_uri=${REDIRECT_URI}&scope=identity%20identity.memberships`;
 
   // Check authentication on mount
