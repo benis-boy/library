@@ -132,7 +132,7 @@ exports.handler = async (event, context) => {
     return {
       statusCode: 500,
       headers,
-      body: 'Error fetching token from Patreon:: ' + error.message,
+      body: 'Error fetching token from Patreon: ' + error.message,
     };
   }
 };
