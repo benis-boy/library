@@ -35,7 +35,7 @@ exports.handler = async (event, context) => {
   }
 
   const client_id = 'DCmpYjAt5oF-1poN2N_hW22VXTuz8BNIOPk1yeoctffuvobAJCu8I7N7fKc1ngMp';
-  const redirect_uri = 'https://benis-boy.github.io/SSJ/'; // Make sure this matches the one registered in Patreon
+  const redirect_uri = 'https://benis-boy.github.io/library/'; // Make sure this matches the one registered in Patreon
 
   const token_url = 'https://www.patreon.com/api/oauth2/token?';
 
