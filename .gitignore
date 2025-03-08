@@ -29,3 +29,4 @@ apps/simple-tts
 # secret stuff
 *_raw/
 book-data
+secret.txt

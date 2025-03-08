@@ -1,8 +1,17 @@
-# Process the raw book data
-python .\deployment\modifyExport.py "PSSJ" "book-data/PSSJ_export.md" "book-data/encrypted_files.md"
-Copy-Item -Path "book-data\PSSJ_navigation.html" -Destination "public\navigation-data\PSSJ_navigation.html" -Force
-
-
+function HandleBook {
+    param (
+        [string]$bookId
+    )
+    python .\deployment\modifyExport.py $bookId "book-data\$bookId`_export.md" "book-data\encrypted_files.md"
+    python .\deployment\encryptExport.py "book-data\$bookId" "book-data\encrypted_files.md"
+    Copy-Item -Path "book-data\$bookId`_navigation.html" -Destination "public\navigation-data\$bookId`_navigation.html" -Force
+    Copy-Item -Path "book-data\$bookId" -Destination "public\book-data" -Recurse -Force
+}
+HandleBook -bookId "PSSJ"
+# python .\deployment\modifyExport.py "PSSJ" "book-data/PSSJ_export.md" "book-data/encrypted_files.md"
+# python .\deployment\encryptExport.py "book-data\PSSJ" "book-data\encrypted_files.md"
+# Copy-Item -Path "book-data\PSSJ_navigation.html" -Destination "public\navigation-data\PSSJ_navigation.html" -Force
+# Copy-Item -Path "book-data\PSSJ" -Destination "public\book-data" -Recurse -Force
 
 # Make the git commit
 if (-not (Test-Path .git)) {
@@ -26,7 +35,8 @@ if (-not $branchExists) {
 $diff = git diff --quiet HEAD origin/netlify -- netlify.toml .netlify/ netlify/
 if ($LASTEXITCODE -eq 0) {
     Write-Host "No Netlify update required." -ForegroundColor Green
-} else {
+}
+else {
     Write-Host "Updating Netlify..." -ForegroundColor Yellow
     .\deployment\deploy-netlify.ps1
 }
