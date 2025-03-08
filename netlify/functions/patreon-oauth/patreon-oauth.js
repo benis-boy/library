@@ -39,7 +39,7 @@ exports.handler = async (event, context) => {
 
   const token_url = 'https://www.patreon.com/api/oauth2/token?';
 
-  const secret = process.env.NETLIFY_SECRET;
+  const secret = process.env.NETLIFY_SECRET_PASSWORD;
   const encryption_password = secret;
 
   try {
