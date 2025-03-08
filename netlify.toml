@@ -1,0 +1,4 @@
+# example netlify.toml
+[build]
+  command = "echo 'No build for static site'"
+  functions = "netlify/functions"
