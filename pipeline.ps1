@@ -1,3 +1,9 @@
+# Process the raw book data
+python .\deployment\modifyExport.py "PSSJ" "book-data/PSSJ_export.md" "book-data/encrypted_files.md"
+Copy-Item -Path "book-data\PSSJ_navigation.html" -Destination "public\navigation-data\PSSJ_navigation.html" -Force
+
+
+
 # Make the git commit
 if (-not (Test-Path .git)) {
     Write-Host "This is not a Git repository. Exiting..." -ForegroundColor Red

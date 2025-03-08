@@ -1,0 +1,46 @@
+body {
+  font-family: sans-serif;
+  padding: 10px;
+}
+#app {
+  margin-bottom: 20px;
+}
+.act, .chapter, .scene, .point {
+  border: 1px solid #ccc;
+  padding: 5px;
+}
+h2, h3, h4 {
+	margin-bottom: 2px;
+	margin-top: 2px;
+}
+.point, .sceneAlways, .chapterAlways {
+  display: flex;
+  justify-content: start; /* Align items from left to right */
+  align-items: center; /* Center items along the middle (vertically) */
+  border: 1px solid black;
+}
+.point div {
+  display: flex;
+}
+.pointTextLarge {
+  font-size: 18px;
+}
+.pointTextSmall {
+	font-size: 12px;
+}
+.link {
+  color: blue;
+  cursor: pointer;
+  text-decoration: underline;
+  margin-left: 5px;
+}
+.controls {
+  margin-top: 20px;
+}
+small {
+  color: #555;
+  margin-right: 5px;
+}
+button {
+  margin: 2px;
+}
