@@ -32,7 +32,7 @@ if (-not $branchExists) {
 }
 
 # Check if there are differences - update if needed
-$diff = git diff --quiet HEAD origin/netlify -- netlify.toml .netlify/ netlify/
+git diff --quiet HEAD origin/netlify -- netlify.toml .netlify/ netlify/
 if ($LASTEXITCODE -eq 0) {
     Write-Host "No Netlify update required." -ForegroundColor Green
 }
