@@ -1,0 +1,17 @@
+@import url('https://fonts.googleapis.com/css2?family=Lexend:wght@400;700&display=swap');
+@import 'tailwindcss';
+
+body #root {
+  font-family: Arial, sans-serif;
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  color: #333;
+  overflow-x: hidden;
+  --header-height: 50px;
+}
+
+button {
+  cursor: pointer; /* Ensures the cursor changes to a hand when hovering */
+}
