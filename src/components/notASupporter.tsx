@@ -1,6 +1,6 @@
 const PatreonMessage = () => {
   return (
-    <div className="message-container p-5 font-sans text-gray-800">
+    <div className="message-container p-5 font-sans ">
       <h1 className="text-2xl mb-2">Support me on Patreon</h1>
       <p className="text-lg leading-relaxed m-0">
         To access the full content, please consider subscribing to me on{' '}

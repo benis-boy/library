@@ -40,8 +40,6 @@ export const ConfigurationView = () => {
     }
   };
 
-  console.log(whiteTone);
-
   const style = {
     fontSize,
     marginBottom: '16px',
@@ -58,11 +56,13 @@ export const ConfigurationView = () => {
       {/* Controls: dark/light, font selector, and font size slider */}
       <Box alignItems="center" mb={2}>
         <div className="flex">
-          <FormControlLabel
-            labelPlacement="bottom"
-            control={<Switch checked={isDarkMode} onChange={() => setIsDarkMode((prev) => !prev)} />}
-            label="Dark Mode"
-          />
+          <div>
+            <FormControlLabel
+              labelPlacement="bottom"
+              control={<Switch checked={isDarkMode} onChange={() => setIsDarkMode((prev) => !prev)} />}
+              label="Dark Mode"
+            />
+          </div>
           <div className="flex flex-grow flex-col gap-4">
             <FormControl
               fullWidth
@@ -135,6 +135,7 @@ export const ConfigurationView = () => {
         </Box>
 
         <Box sx={{ flexDirection: 'column' }} display="flex">
+          <Box sx={{ color: whiteTone }} />
           <Typography style={style}>
             Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nulla iaculis risus ac semper porta. Proin sit amet
             pulvinar magna. Curabitur a justo ac leo sollicitudin venenatis.
