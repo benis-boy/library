@@ -11,7 +11,7 @@ import sys
 
 def normalize_paths(paths):
     """Normalize a list of paths."""
-    return [os.path.normpath(path) for path in paths]
+    return [os.path.join("book-data", os.path.normpath(path)) for path in paths]
 
 
 def parse_encrypted_md(encryption_base):
@@ -63,6 +63,7 @@ def is_encrypted_file(relative_path):
     """Check if a file should be encrypted based on the parsed and normalized data."""
     # Normalize the input path
     relative_path = os.path.normpath(relative_path)
+    print(relative_path)
 
     # Check if file is specifically in the encrypted files list (normalized comparison)
     if relative_path in encrypted_files:
@@ -129,6 +130,7 @@ def encrypt_file(file_path, password):
 
 
 def encrypt_folder(src_folder, password):
+    print(encrypted_folders, encrypted_files, exceptions)
     for root, _, files in os.walk(src_folder):
         for file in files:
             file_path = os.path.join(root, file)
