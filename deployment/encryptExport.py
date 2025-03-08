@@ -187,7 +187,7 @@ if __name__ == "__main__":
         exit()
 
     with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "secret.txt"), "r") as f:
-        password = "\n".join(f.readlines())
+        password = "\n".join(f.readlines()).strip()
 
     if password is None:
         print("password failed to be retrieved")
