@@ -7,7 +7,7 @@ import sys
 
 def normalize_paths(paths):
     """Normalize a list of paths."""
-    return [os.path.join("book-data", os.path.normpath(path)) for path in paths]
+    return [os.path.join(os.path.normpath(path)) for path in paths]
 
 
 def parse_encrypted_md(encryption_base):

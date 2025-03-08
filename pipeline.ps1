@@ -8,10 +8,6 @@ function HandleBook {
     Copy-Item -Path "book-data\$bookId" -Destination "public\book-data" -Recurse -Force
 }
 HandleBook -bookId "PSSJ"
-# python .\deployment\modifyExport.py "PSSJ" "book-data/PSSJ_export.md" "book-data/encrypted_files.md"
-# python .\deployment\encryptExport.py "book-data\PSSJ" "book-data\encrypted_files.md"
-# Copy-Item -Path "book-data\PSSJ_navigation.html" -Destination "public\navigation-data\PSSJ_navigation.html" -Force
-# Copy-Item -Path "book-data\PSSJ" -Destination "public\book-data" -Recurse -Force
 
 # Make the git commit
 if (-not (Test-Path .git)) {

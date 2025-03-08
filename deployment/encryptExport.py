@@ -63,7 +63,6 @@ def is_encrypted_file(relative_path):
     """Check if a file should be encrypted based on the parsed and normalized data."""
     # Normalize the input path
     relative_path = os.path.normpath(relative_path)
-    print(relative_path)
 
     # Check if file is specifically in the encrypted files list (normalized comparison)
     if relative_path in encrypted_files:
