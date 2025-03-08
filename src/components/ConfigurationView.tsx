@@ -42,7 +42,16 @@ export const ConfigurationView = () => {
 
   console.log(whiteTone);
 
-  const style = { fontSize, marginBottom: '16px', fontFamily: selectedFont, color: isDarkMode ? whiteTone : 'black' };
+  const style = {
+    fontSize,
+    marginBottom: '16px',
+    fontFamily: selectedFont,
+    color: isDarkMode ? whiteTone : 'black',
+    lineHeight: '1.6',
+    margin: '0.5em 0',
+    textAlign: 'justify' as CanvasTextAlign,
+    padding: '0 10px',
+  };
 
   return (
     <Box display={'flex'} flexGrow={1} p={2}>

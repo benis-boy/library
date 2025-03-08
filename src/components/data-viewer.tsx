@@ -140,6 +140,10 @@ const injectStyles = (
           color: ${isDarkMode ? '#ddd' : 'black'};
           font-family: ${selectedFont};
           font-size: ${fontSize}px;
+          line-height: 1.6;
+          margin: 0.5em 0;
+          text-align: justify;
+          padding: 0 10px;
         }
       `;
       iframeDocument.head.appendChild(styleElement); // Append styles to the head of the iframe's document

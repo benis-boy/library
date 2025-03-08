@@ -10,12 +10,12 @@ export const ConfigurationProvider: React.FC<{ children: ReactNode }> = ({ child
 
   const [selectedFont, setSelectedFont] = useState<string>(() => {
     const stored = localStorage.getItem('config_selectedFont');
-    return stored || 'Arial';
+    return stored || 'Lexend';
   });
 
   const [fontSize, setFontSize] = useState<number>(() => {
     const stored = localStorage.getItem('config_fontSize');
-    return stored ? JSON.parse(stored) : 16;
+    return stored ? JSON.parse(stored) : 17;
   });
 
   const [whiteTone, setWhiteTone] = useState<string>(() => {

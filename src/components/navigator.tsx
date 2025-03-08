@@ -51,7 +51,9 @@ export const Navigator = ({
     // Listen for messages from the iframe
     const handleMessage = (event: MessageEvent) => {
       // TODO set new URL
-      if (!event.origin.startsWith('https://benis-boy.github.io/library/')) {
+      console.log(event);
+
+      if (!(event.origin.startsWith('https://benis-boy.github.io') || event.origin.startsWith('http://localhost:'))) {
         return; // Ignore untrusted messages
       }
 
@@ -239,7 +241,7 @@ export const Navigator = ({
         <iframe
           ref={iframeRef}
           onLoad={() => injectStyles(iframeRef, { isDarkMode, selectedFont, fontSize })}
-          src={`/navigation-data/${selectedBook}_navigation.html`}
+          src={`navigation-data/${selectedBook}_navigation.html`}
           title="External HTML"
           width="100%"
           height="100%"
