@@ -48,8 +48,8 @@ export const PatreonProvider = ({ children }: { children: ReactNode }) => {
 
   // Handle OAuth callback after login
   const handleAuthCode = async (authCode: string) => {
-    // const response = await fetch('https://mellow-kitsune-6578b2.netlify.app/.netlify/functions/patreon-oauth', {
-    const response = await fetch('http://localhost:5178/patreon-oauth', {
+    const response = await fetch('https://mellow-kitsune-6578b2.netlify.app/.netlify/functions/patreon-oauth', {
+      // const response = await fetch('http://localhost:5178/patreon-oauth', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ code: authCode }),
