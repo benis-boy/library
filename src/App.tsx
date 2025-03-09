@@ -8,6 +8,8 @@ import { LibraryProvider } from './context/LibraryProvider';
 import { PatreonProvider } from './context/PatreonProvider';
 import { ConfigurationProvider } from './context/ConfigurationProvider';
 
+// color palette https://colorhunt.co/palette/09122c872341be3144e17564
+
 function InnerApp() {
   const lContext = useContext(LibraryContext);
   const { otherPageInfo } = lContext ?? {};

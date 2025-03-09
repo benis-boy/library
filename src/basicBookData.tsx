@@ -4,7 +4,7 @@ export const basicBookData = [
   {
     id: 'PSSJ' as SourceType,
     title: "Pokemon - Solo's Strange Journey",
-    assetId: 'assets/PSSJ_600x800_2.png',
+    assetId: 'assets/PSSJ_small.png',
     wordCountData: '8 Volumes, 475.000 Words',
     lastUpdate: 'Latest update on 16 Jan 2025',
     isReady: true,
