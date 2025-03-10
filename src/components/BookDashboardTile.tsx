@@ -1,7 +1,7 @@
-import React, { useContext } from 'react';
-import { basicBookData } from '../basicBookData';
-import { SourceType } from '../constants';
 import { useMediaQuery, useTheme } from '@mui/material';
+import React, { useContext } from 'react';
+import { BasicBookData } from '../basicBookData';
+import { SourceType } from '../constants';
 import { LibraryContext } from '../context/LibraryContext';
 
 const BookDashboardTile = ({
@@ -10,7 +10,7 @@ const BookDashboardTile = ({
   smallView,
   setSelected,
 }: {
-  bbd: (typeof basicBookData)[number];
+  bbd: BasicBookData;
   selected: SourceType | undefined;
   setSelected: React.Dispatch<React.SetStateAction<SourceType | undefined>>;
   smallView: boolean;

@@ -2,7 +2,7 @@ import { Fragment, useContext, useEffect, useState } from 'react';
 import { LibraryContext } from '../context/LibraryContext';
 import { PatreonContext } from '../context/PatreonContext';
 import { Box, SwipeableDrawer, useMediaQuery, useTheme } from '@mui/material';
-import { basicBookData } from '../basicBookData';
+import basicBookData from '../basicBookData';
 
 const WebsiteHeader = ({
   isHeaderVisible,

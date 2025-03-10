@@ -50,9 +50,6 @@ export const Navigator = ({
   useEffect(() => {
     // Listen for messages from the iframe
     const handleMessage = (event: MessageEvent) => {
-      // TODO set new URL
-      console.log(event);
-
       if (!(event.origin.startsWith('https://benis-boy.github.io') || event.origin.startsWith('http://localhost:'))) {
         return; // Ignore untrusted messages
       }

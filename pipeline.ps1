@@ -2,7 +2,7 @@ function HandleBook {
     param (
         [string]$bookId
     )
-    python .\deployment\modifyExport.py $bookId "book-data\$bookId`_export.md" "book-data\encrypted_files.md"
+    python .\deployment\modifyExport.py $bookId "book-data\$bookId`_export.md" "book-data\encrypted_files.md" "src\basicBookData.json"
     python .\deployment\encryptExport.py "book-data\$bookId" "book-data\encrypted_files.md"
     Copy-Item -Path "book-data\$bookId`_navigation.html" -Destination "public\navigation-data\$bookId`_navigation.html" -Force
     Copy-Item -Path "book-data\$bookId" -Destination "public\book-data" -Recurse -Force

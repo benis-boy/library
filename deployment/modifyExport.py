@@ -1,8 +1,50 @@
+import json
 import os
 import re
 import math
 import html
+from datetime import datetime
 import sys
+from bs4 import BeautifulSoup
+
+
+chapter_title_mapping = {}
+total_words = 0
+
+
+def update_basic_book_data(json_file, bookId, new_word_count):
+    # Round to nearest 1000 and format with dot as thousand separator
+    new_word_count = round(new_word_count, -3)
+    formatted_word_count = f"{new_word_count:,}".replace(",", ".") + " Words"
+
+    # Load JSON
+    with open(json_file, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+
+    # Find and update the matching book entry
+    updated = False
+    for book in data:
+        if book["id"] == bookId:
+            old_word_count = int("".join(filter(str.isdigit, book["wordCountData"].split(
+                " ")[-2]))) if "Words" in book["wordCountData"] else 0
+            book["wordCountData"] = formatted_word_count
+
+            # Update lastUpdate if word count increased by more than 10,000
+            if new_word_count - old_word_count > 10000:
+                book["lastUpdate"] = f"Last updated on {datetime.now().strftime('%d %b %Y')}"
+            elif old_word_count == 0:
+                book["lastUpdate"] = f"Added on {datetime.now().strftime('%d %b %Y')}"
+
+            updated = True
+            break
+
+    if updated:
+        # Save the updated JSON
+        with open(json_file, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2)
+        print(f"Updated {bookId} to {formatted_word_count}")
+    else:
+        print(f"No matching book found for id: {bookId}")
 
 
 def normalize_paths(paths):
@@ -134,7 +176,7 @@ def count_words(text):
     return len(re.findall(r'\w+', text))
 
 
-def split_md_to_txt(md_file):
+def split_md_to_txt(md_file, current_directory):
     # Read the file content
     with open(md_file, 'r', encoding='utf-8') as file:
         content = file.read()
@@ -154,18 +196,21 @@ def split_md_to_txt(md_file):
             continue
 
         # Get the file name from the header
-        chapter_name = section[:header_end_index].strip()
+        original_chapter_name = section[:header_end_index].strip()
         # Get the section content
         section_content = section[header_end_index:].strip()
 
         # Ensure valid file name by removing or replacing invalid characters
-        chapter_name = re.sub(r'[<>:"/\\|?*]', '', chapter_name)
+        chapter_name = re.sub(r'[<>:"/\\|?*]', '', original_chapter_name)
         chapter_name = chapter_name.strip()[3:]
 
         # Create the output file name
         output_file_name = f'{str(math.ceil(i + 1)).zfill(2)}_{chapter_name}.txt'
         output_file_path = os.path.join(
             os.path.dirname(md_file), output_file_name)
+
+        chapter_title_mapping[os.path.splitext(os.path.normpath(os.path.relpath(
+            output_file_path, current_directory)))[0]] = f'{str(math.ceil(i + 1)).zfill(2)} {original_chapter_name.strip()[3:]}'
 
         # Write the section content to the output file
         with open(output_file_path, 'w', encoding='utf-8') as output_file:
@@ -235,6 +280,16 @@ def txt_to_html(file_path):
     return re.sub(r'\n{2,}', '\n', '\n'.join(wrapped_lines))
 
 
+def count_words_in_html(html, location):
+    soup = BeautifulSoup(html, 'html.parser')
+    # Get visible text
+    text = soup.get_text(separator=' ')
+    pattern = re.compile(r"\b\w+(?:[-']\w+)*\b")
+    words = pattern.findall(text)
+    count = len(words)
+    return count
+
+
 def update_index_html(directory, book_id):
     # Prepare to collect HTML files
     html_files = []
@@ -247,6 +302,14 @@ def update_index_html(directory, book_id):
                     # Store relative path of HTML files
                     html_files.append(os.path.relpath(
                         os.path.join(root, file), directory))
+
+    global total_words
+    total_words = 0
+    for file_path in html_files:
+        with open((os.path.join(directory, file_path)), 'r', encoding='utf-8') as f:
+            print(file_path)
+            content = f.read()
+            total_words += count_words_in_html(content, file_path)
 
     # Create new content for the links section
     new_content = []
@@ -268,16 +331,18 @@ def update_index_html(directory, book_id):
         for chapter_name, file_path in chapters:
             # Normalize path separators
             normalized_file = os.path.normpath(file_path)
+            display_title = chapter_title_mapping.get(
+                os.path.splitext(normalized_file)[0], chapter_name.replace("_", " "))
             # Escape special characters in the file path
             escaped_file = normalized_file.replace(
                 "\\", "\\\\").replace("'", "\\'")
 
             if is_encrypted_file(file_path):
                 new_ul_content.append(
-                    f'                <li style="display: flex; justify-content: space-between; align-items: center;"><a href="#" onclick="loadContent(\'{escaped_file}\', true); return false;" style="flex-grow: 1;">{chapter_name.replace("_", " ")}</a><span>$</span></li>')
+                    f'                <li style="display: flex; justify-content: space-between; align-items: center;"><a href="#" onclick="loadContent(\'{escaped_file}\', true); return false;" style="flex-grow: 1;">{display_title}</a><span>$</span></li>')
             else:
                 new_ul_content.append(
-                    f'                <li><a href="#" onclick="loadContent(\'{escaped_file}\'); return false;">{chapter_name.replace("_", " ")}</a></li>')
+                    f'                <li><a href="#" onclick="loadContent(\'{escaped_file}\'); return false;">{display_title}</a></li>')
         new_ul_content.append('            </ul>\n        </li>')
 
     new_ul_content_str = '\n'.join(new_ul_content)
@@ -289,7 +354,7 @@ def update_index_html(directory, book_id):
     print(f'Updated the links to load content dynamically in {directory}')
 
 
-def process_book(book_path):
+def process_book(book_path, current_directory):
     print("Processing book", book_path)
     for folder_name in os.listdir(book_path):
         folder_path = os.path.join(book_path, folder_name)
@@ -305,7 +370,7 @@ def process_book(book_path):
             if os.path.isfile(expected_file_path):
                 # Call split_md_to_txt with the exact file path
                 print("splitting", expected_file_path)
-                split_md_to_txt(expected_file_path)
+                split_md_to_txt(expected_file_path, current_directory)
 
             for filename in os.listdir(folder_path):
                 # Check if the file ends with ".txt"
@@ -324,8 +389,8 @@ def process_book(book_path):
 
 if __name__ == '__main__':  # Get the current directory
     # Check if the script has been called with a file name argument
-    if len(sys.argv) < 4:
-        print("Usage: python modifyExport.py <bookId> \"..._export.md\" \"...encrypted_files.md\"")
+    if len(sys.argv) < 5:
+        print("Usage: python modifyExport.py <bookId> \"..._export.md\" \"...encrypted_files.md\" \"...basicBookData.json\"")
         exit()
     bookId = sys.argv[1]
     exportMdFile = sys.argv[2]
@@ -335,6 +400,10 @@ if __name__ == '__main__':  # Get the current directory
     encryption_base_data = sys.argv[3]
     if not os.path.exists(encryption_base_data):
         print("File does not exist", encryption_base_data)
+        exit()
+    basic_book_data = sys.argv[4]
+    if not os.path.exists(basic_book_data):
+        print("File does not exist", basic_book_data)
         exit()
 
     encrypted_folders, encrypted_files, exceptions = parse_encrypted_md(
@@ -348,6 +417,8 @@ if __name__ == '__main__':  # Get the current directory
     clean_markdown_file(exportMdFile, trimmed)
     separate_volumes(trimmed, bookId)
 
-    process_book(os.path.join(current_dir, bookId))
+    process_book(os.path.join(current_dir, bookId), current_dir)
 
     update_index_html(current_dir, bookId)
+
+    update_basic_book_data(basic_book_data, bookId, total_words)

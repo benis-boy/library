@@ -5,9 +5,9 @@ import { IconButton, useMediaQuery, useTheme } from '@mui/material';
 import { Fragment, useContext, useState } from 'react';
 import { LibraryContext } from '../context/LibraryContext';
 import { SourceType } from '../constants';
-import { basicBookData } from '../basicBookData';
 import BookDashboardTile from './BookDashboardTile';
 import { ConfigurationContext } from '../context/ConfigurationContext';
+import basicBookData from '../basicBookData';
 
 export const Homepage = () => {
   const { isDarkMode } = useContext(ConfigurationContext);
