@@ -11,7 +11,7 @@ import {
   Typography,
 } from '@mui/material';
 import { SelectChangeEvent } from '@mui/material/Select/SelectInput';
-import { useContext } from 'react';
+import React, { useContext } from 'react';
 import { ConfigurationContext } from '../context/ConfigurationContext';
 
 export const ConfigurationView = () => {
@@ -167,7 +167,36 @@ export const ConfigurationView = () => {
             aperiam, eaque ipsa quae ab illo inventore veritatis et quasi architecto beatae vitae dicta sunt explicabo.
           </Typography>
         </Box>
+        <Impressum />
       </Box>
     </Box>
+  );
+};
+
+const Impressum = () => {
+  const [showDetails, setShowDetails] = React.useState(false);
+
+  const toggleDetails = () => {
+    setShowDetails(!showDetails);
+  };
+  return (
+    <div>
+      <h1 onClick={toggleDetails} style={{ fontSize: '24px', marginTop: '100px', cursor: 'pointer' }}>
+        Impressum
+      </h1>
+      {showDetails && (
+        <div style={{ fontSize: '10px' }}>
+          <p>Verantwortlich für den Inhalt dieser Website:</p>
+          <p>Benjamin Warnecke</p>
+          <p>Adresse: Am Heidberg 11A, 21354 Bleckede, Deutschland</p>
+          <p>
+            Kontakt:
+            <a href="mailto:benjamin.business.warnecke@gmail.com" style={{ color: '#0066cc', textDecoration: 'none' }}>
+              benjamin.business.warnecke@gmail.com
+            </a>
+          </p>
+        </div>
+      )}
+    </div>
   );
 };
