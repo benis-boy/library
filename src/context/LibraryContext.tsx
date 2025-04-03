@@ -8,7 +8,7 @@ export type LibraryContextType = {
     selectedChapter: string | undefined;
     content: string;
   };
-  setSelectedBook: (book: SourceType) => void;
+  setSelectedBook: (book: SourceType, loadChapterToo: boolean) => void;
   setSelectedChapter: (chapter: string, secured: boolean) => void;
   otherPageInfo: {
     pageType: false | 'homepage' | 'not_a_supporter' | 'not_logged_in' | 'configuration' | 'end_of_book';

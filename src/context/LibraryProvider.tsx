@@ -1,4 +1,4 @@
-import { ReactNode, useContext, useEffect, useState } from 'react';
+import { ReactNode, useContext, useState } from 'react';
 import { SourceType, SourceTypes } from '../constants';
 import { LibraryContext, LibraryContextType, useLoadContent } from './LibraryContext';
 import { PatreonContext } from './PatreonContext';
@@ -22,7 +22,7 @@ export const LibraryProvider = ({ children }: { children: ReactNode }) => {
   });
   const loadContent = useLoadContent((data) => setLibraryData((old) => ({ ...old, content: data })));
 
-  const setSelectedBook = (book: SourceType) => {
+  const setSelectedBook = (book: SourceType, loadChapterToo: boolean) => {
     setLibraryData((old) => ({ ...old, selectedBook: book }));
     localStorage.setItem('SELECTED_BOOK', book);
     const tryLoadOldChapter = localStorage.getItem(book + '_SELECTED_CHAPTER') || undefined;
@@ -39,10 +39,9 @@ export const LibraryProvider = ({ children }: { children: ReactNode }) => {
       return;
     }
 
-    if (tryLoadOldChapter) {
+    if (tryLoadOldChapter && loadChapterToo) {
       setSelectedChapter(tryLoadOldChapter, isEncrypted);
-    } else {
-      setOtherPageInfoType('homepage');
+    } else if (loadChapterToo) {
       const event = new CustomEvent('loadFirstChapter', { detail: { book } });
       window.dispatchEvent(event);
     }
@@ -73,31 +72,6 @@ export const LibraryProvider = ({ children }: { children: ReactNode }) => {
     });
     window.dispatchEvent(loadedEvent);
   };
-
-  useEffect(() => {
-    // Only call loadContent if both selectedBook and selectedChapter are set.
-    if (libraryData.selectedBook && libraryData.selectedChapter) {
-      const isEncrypted =
-        (localStorage.getItem(`IS_ENCRYPTED_${libraryData.selectedBook}_${libraryData.selectedChapter}`) ?? 'false') ===
-        'true';
-
-      if (isEncrypted && !pContext?.isLoggedIn) {
-        setOtherPageInfoType('homepage');
-        return;
-      }
-      if (isEncrypted && !pContext?.isSupporter) {
-        setOtherPageInfoType('homepage');
-        return;
-      }
-      if (!pContext?.isLoggedIn) {
-        setOtherPageInfoType('homepage');
-        return;
-      }
-      loadContent(libraryData.selectedBook, libraryData.selectedChapter, isEncrypted);
-      setOtherPageInfoType(false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pContext?.encryptionPassword, pContext?.isLoggedIn, pContext?.isSupporter]);
 
   return (
     <LibraryContext.Provider

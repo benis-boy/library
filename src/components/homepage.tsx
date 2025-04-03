@@ -25,10 +25,6 @@ export const Homepage = () => {
 
   if (!lContext) return <Fragment />;
 
-  // if (isLargeScreen && selected) setSelected(undefined);
-
-  // TODO write another script into the pipeline that does the word-counts
-
   return (
     <div className="p-5 font-sans flex flex-col min-h-full w-full">
       <div className="flex justify-between items-center mb-5">
