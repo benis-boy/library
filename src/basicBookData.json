@@ -10,7 +10,8 @@
   {
     "id": "WtDR",
     "title": "Where the Dead Remember",
-    "assetId": "assets/WtDR_600x800_3.png",
+    "assetId": "assets/WtDR_cover_front.png",
+    "assetIdBack": "assets/WtDR_cover_back.png",
     "wordCountData": "Coming soon",
     "lastUpdate": "",
     "isReady": false

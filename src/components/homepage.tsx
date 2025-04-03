@@ -1,13 +1,13 @@
 import GridViewIcon from '@mui/icons-material/GridView';
-import ViewListIcon from '@mui/icons-material/ViewList';
 import SettingsIcon from '@mui/icons-material/Settings';
+import ViewListIcon from '@mui/icons-material/ViewList';
 import { IconButton, useMediaQuery, useTheme } from '@mui/material';
 import { Fragment, useContext, useState } from 'react';
-import { LibraryContext } from '../context/LibraryContext';
 import { SourceType } from '../constants';
-import BookDashboardTile from './BookDashboardTile';
 import { ConfigurationContext } from '../context/ConfigurationContext';
-import basicBookData from '../basicBookData';
+import { LibraryContext } from '../context/LibraryContext';
+import PSSJBookDashboardTile from './dashboardTiles/PSSJBookDashboardTile';
+import WtDRBookDashboardTile from './dashboardTiles/WtDRBookDashboardTile';
 
 export const Homepage = () => {
   const { isDarkMode } = useContext(ConfigurationContext);
@@ -25,7 +25,7 @@ export const Homepage = () => {
 
   if (!lContext) return <Fragment />;
 
-  if (isLargeScreen && selected) setSelected(undefined);
+  // if (isLargeScreen && selected) setSelected(undefined);
 
   // TODO write another script into the pipeline that does the word-counts
 
@@ -48,17 +48,8 @@ export const Homepage = () => {
       </div>
 
       <div className="flex flex-col sm:flex-row gap-5">
-        {basicBookData.map((bbd) => {
-          return (
-            <BookDashboardTile
-              bbd={bbd}
-              selected={selected}
-              setSelected={setSelected}
-              smallView={smallView}
-              key={bbd.id}
-            />
-          );
-        })}
+        <PSSJBookDashboardTile selected={selected} setSelected={setSelected} smallView={smallView} />
+        <WtDRBookDashboardTile selected={selected} setSelected={setSelected} smallView={smallView} />
       </div>
       <div className="flex-grow" />
     </div>

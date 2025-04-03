@@ -1,30 +1,23 @@
-import { useMediaQuery, useTheme } from '@mui/material';
-import React, { useContext } from 'react';
-import { BasicBookData } from '../basicBookData';
-import { SourceType } from '../constants';
-import { LibraryContext } from '../context/LibraryContext';
+import React from 'react';
+import basicBookData from '../../basicBookData';
+import { SourceType } from '../../constants';
+import { useBookSelection } from './abstracts';
 
-const BookDashboardTile = ({
-  bbd,
+const WtDRBookDashboardTile = ({
   selected,
   smallView,
   setSelected,
 }: {
-  bbd: BasicBookData;
   selected: SourceType | undefined;
   setSelected: React.Dispatch<React.SetStateAction<SourceType | undefined>>;
   smallView: boolean;
 }) => {
-  const lContext = useContext(LibraryContext);
-  const {
-    setSelectedBook,
-    // libraryData: { selectedBook },
-  } = lContext || { libraryData: {} };
-  const hasStartedReading = localStorage.getItem(bbd.id + '_SELECTED_CHAPTER') || undefined;
-  const theme = useTheme();
-  const isLargeScreen = useMediaQuery(theme.breakpoints.up('sm'));
-  const isSelected = selected === bbd.id;
-  const isSmallTile = smallView && !isLargeScreen && !isSelected;
+  const bbd = basicBookData.find((bbd) => bbd.id === 'WtDR')!;
+  const { setSelectedBook, hasStartedReading, isLargeScreen, isSelected, isSmallTile } = useBookSelection({
+    bbd,
+    selected,
+    smallView,
+  });
 
   return (
     <div
@@ -34,7 +27,7 @@ const BookDashboardTile = ({
     >
       <div className={`${isSmallTile ? '' : ' flex-col'} flex`}>
         <img
-          src={bbd.assetId}
+          src={isSelected ? bbd.assetIdBack : bbd.assetId}
           alt={bbd.title}
           className={isSmallTile ? 'w-[6rem] h-[8rem]' : 'w-72 h-96'}
           loading="lazy"
@@ -68,4 +61,4 @@ const BookDashboardTile = ({
   );
 };
 
-export default BookDashboardTile;
+export default WtDRBookDashboardTile;

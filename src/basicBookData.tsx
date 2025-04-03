@@ -5,6 +5,7 @@ export type BasicBookData = {
   id: SourceType;
   title: string;
   assetId: string;
+  assetIdBack?: string;
   wordCountData: string;
   lastUpdate: string;
   isReady: boolean;
