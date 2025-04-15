@@ -187,8 +187,6 @@ const Impressum = () => {
       {showDetails && (
         <div style={{ fontSize: '10px' }}>
           <p>Verantwortlich für den Inhalt dieser Website:</p>
-          <p>Benjamin Warnecke</p>
-          <p>Adresse: Am Heidberg 11A, 21354 Bleckede, Deutschland</p>
           <p>
             Kontakt:
             <a href="mailto:benjamin.business.warnecke@gmail.com" style={{ color: '#0066cc', textDecoration: 'none' }}>
