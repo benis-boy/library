@@ -250,8 +250,11 @@ def txt_to_html(file_path):
     with open(file_path, 'r', encoding='utf-8') as file:
         text = file.read()
 
+    # Replace common problematic bytes
+    text = text.replace('\xa0', ' ')  # non-breaking space
     # Escape HTML special characters
     text = html.escape(text)
+    text = text.replace('\xb0', '&deg;')  # degree symbol
 
     # Replace "---" with "<br />---<br />"
     text = text.replace('---', '<hr />')
@@ -268,10 +271,14 @@ def txt_to_html(file_path):
     new_paragraph = True
 
     for line in lines:
-        if new_paragraph and line.strip():
-            wrapped_lines.append(f'<p>{line}</p>')
+        stripped = line.strip()
+        if new_paragraph and stripped:
+            if stripped == "<hr />":
+                wrapped_lines.append(stripped)
+                continue
+            wrapped_lines.append(f'<p>{stripped}</p>')
             new_paragraph = False
-        elif line.strip() == '':
+        elif stripped == '':
             new_paragraph = True
             wrapped_lines.append(line)
         else:
@@ -384,8 +391,8 @@ def process_book(book_path, current_directory):
                     html_filename = filename.rsplit('.', 1)[0] + '.html'
                     html_file_path = os.path.join(folder_path, html_filename)
                     with open(html_file_path, 'w', encoding='utf-8') as file:
-                        file.write("<!DOCTYPE html>\n<head><title>" + filename.rsplit(
-                            '.', 1)[0] + "</title></head>" + processed_content)
+                        file.write(
+                            f'<!DOCTYPE html><html lang="en">\n<head><meta charset="UTF-8"><title>{filename.rsplit(".", 1)[0]}</title></head>\n{processed_content}\n</html >')
 
 
 if __name__ == '__main__':  # Get the current directory
