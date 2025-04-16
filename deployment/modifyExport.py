@@ -254,8 +254,7 @@ def txt_to_html(file_path):
     text = html.escape(text)
 
     # Replace "---" with "<br />---<br />"
-    text = text.replace('---', '<br />---<br /><br />')
-    text = text.replace('<br />---<br /><br />', '<hr />')
+    text = text.replace('---', '<hr />')
 
     # Wrap text between "**" with <strong> tags
     text = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', text)
