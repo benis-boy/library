@@ -384,7 +384,8 @@ def process_book(book_path, current_directory):
                     html_filename = filename.rsplit('.', 1)[0] + '.html'
                     html_file_path = os.path.join(folder_path, html_filename)
                     with open(html_file_path, 'w', encoding='utf-8') as file:
-                        file.write(processed_content)
+                        file.write("<!DOCTYPE html>\n<head><title>" + filename.rsplit(
+                            '.', 1)[0] + "</title></head>" + processed_content)
 
 
 if __name__ == '__main__':  # Get the current directory
