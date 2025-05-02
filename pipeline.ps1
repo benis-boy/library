@@ -6,6 +6,12 @@ function HandleBook {
     python .\deployment\encryptExport.py "book-data\$bookId" "book-data\encrypted_files.md"
     Copy-Item -Path "book-data\$bookId`_navigation.html" -Destination "public\navigation-data\$bookId`_navigation.html" -Force
     Copy-Item -Path "book-data\$bookId" -Destination "public\book-data" -Recurse -Force
+
+    # Remove .webnovel.html files from destination
+    $destPath = "public\book-data\$bookId"
+    if (Test-Path $destPath) {
+        Get-ChildItem -Path $destPath -Recurse -Filter *.webnovel.html | Remove-Item -Force
+    }
 }
 HandleBook -bookId "PSSJ"
 
