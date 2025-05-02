@@ -164,7 +164,7 @@ def remove_empty_folders(folder_path):
 def remove_non_html_files(folder_path):
     for root, _, files in os.walk(folder_path):
         for file in files:
-            if not file.endswith('.html'):
+            if not file.endswith('.html') or file.endswith('.webnovel.html'):
                 file_path = os.path.join(root, file)
                 try:
                     os.remove(file_path)
