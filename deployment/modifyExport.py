@@ -306,7 +306,7 @@ def update_index_html(directory, book_id):
     for root, dirs, files in os.walk(directory):
         if "\\" + book_id + "\\" in root:
             for file in files:
-                if file.endswith('.html'):
+                if file.endswith('.html') and not file.endswith('.webnovel.html'):
                     # Store relative path of HTML files
                     html_files.append(os.path.relpath(
                         os.path.join(root, file), directory))
