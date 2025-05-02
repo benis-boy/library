@@ -245,7 +245,7 @@ def split_md_to_txt(md_file, current_directory):
                 output_file.write(scene)
 
 
-def txt_to_html(file_path):
+def txt_to_html(file_path, handle_hr=True):
     # Read the content of the .txt file
     with open(file_path, 'r', encoding='utf-8') as file:
         text = file.read()
@@ -256,8 +256,9 @@ def txt_to_html(file_path):
     text = html.escape(text)
     text = text.replace('\xb0', '&deg;')  # degree symbol
 
-    # Replace "---" with "<br />---<br />"
-    text = text.replace('---', '<hr />')
+    if handle_hr:
+        # Replace "---" with "<br />---<br />"
+        text = text.replace('---', '<hr />')
 
     # Wrap text between "**" with <strong> tags
     text = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', text)
@@ -389,6 +390,17 @@ def process_book(book_path, current_directory):
 
                     # Write the processed content to a .html file
                     html_filename = filename.rsplit('.', 1)[0] + '.html'
+                    html_file_path = os.path.join(folder_path, html_filename)
+                    with open(html_file_path, 'w', encoding='utf-8') as file:
+                        file.write(
+                            f'<!DOCTYPE html><html lang="en">\n<head><meta charset="UTF-8"><title>{filename.rsplit(".", 1)[0]}</title></head>\n{processed_content}\n</html >')
+
+                    # process for webnovel
+                    processed_content = txt_to_html(file_path, False)
+
+                    # Write the processed content to a .html file
+                    html_filename = filename.rsplit(
+                        '.', 1)[0] + 'webnovel.html'
                     html_file_path = os.path.join(folder_path, html_filename)
                     with open(html_file_path, 'w', encoding='utf-8') as file:
                         file.write(
