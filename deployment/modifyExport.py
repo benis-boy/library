@@ -400,7 +400,7 @@ def process_book(book_path, current_directory):
 
                     # Write the processed content to a .html file
                     html_filename = filename.rsplit(
-                        '.', 1)[0] + 'webnovel.html'
+                        '.', 1)[0] + '.webnovel.html'
                     html_file_path = os.path.join(folder_path, html_filename)
                     with open(html_file_path, 'w', encoding='utf-8') as file:
                         file.write(
