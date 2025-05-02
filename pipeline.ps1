@@ -24,6 +24,8 @@ git add .
 git commit -m "automated commit"
 git push
 
+exit
+
 # Fetch latest changes from remote
 git fetch origin netlify
 git checkout netlify -- netlify.toml .netlify/ netlify/ 2>$null
