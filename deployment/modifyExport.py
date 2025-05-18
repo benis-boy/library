@@ -340,7 +340,7 @@ def update_index_html(directory, book_id):
             # Normalize path separators
             normalized_file = os.path.normpath(file_path)
             display_title = chapter_title_mapping.get(
-                os.path.splitext(normalized_file)[0], chapter_name.replace("_", " "))
+                os.path.splitext(normalized_file)[0], chapter_name.replace("_", " ", 1))
             # Escape special characters in the file path
             escaped_file = normalized_file.replace(
                 "\\", "\\\\").replace("'", "\\'")

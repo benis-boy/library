@@ -28,6 +28,6 @@ apps/simple-tts
 
 # secret stuff
 *_raw/
-book-data
+/book-data
 secret.txt
 *.webnovel.html
