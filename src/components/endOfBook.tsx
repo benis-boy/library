@@ -19,7 +19,7 @@ const EndOfBookMessage = () => {
       }}
     >
       <Typography variant="h4" gutterBottom>
-        Congratulations! (or not) You've Reached the End of the Book 😭
+        Congratulations (or not)! You've Reached the End of the Book 😭
       </Typography>
       <Typography variant="body1" gutterBottom>
         Thank you so much for reading! If you enjoyed the journey, please consider supporting my work and helping me
