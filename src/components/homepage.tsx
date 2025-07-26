@@ -3,7 +3,6 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import ViewListIcon from '@mui/icons-material/ViewList';
 import { IconButton, useMediaQuery, useTheme } from '@mui/material';
 import { Fragment, useContext, useState } from 'react';
-import { SourceType } from '../constants';
 import { ConfigurationContext } from '../context/ConfigurationContext';
 import { LibraryContext } from '../context/LibraryContext';
 import PSSJBookDashboardTile from './dashboardTiles/PSSJBookDashboardTile';
@@ -13,15 +12,12 @@ export const Homepage = () => {
   const { isDarkMode } = useContext(ConfigurationContext);
   const lContext = useContext(LibraryContext);
   const {
-    libraryData: { selectedBook },
     otherPageInfo: { showOtherPage },
   } = lContext!;
   const [smallView, setSmallView] = useState<boolean>(true);
-  const [selected, setSelected] = useState<SourceType | undefined>(selectedBook);
   // Define responsive styles
   const theme = useTheme();
   const isLargeScreen = useMediaQuery(theme.breakpoints.up('sm'));
-  //   const isPortrait = useMediaQuery('(orientation: portrait)');
 
   if (!lContext) return <Fragment />;
 
@@ -44,8 +40,8 @@ export const Homepage = () => {
       </div>
 
       <div className="flex flex-col sm:flex-row gap-5">
-        <PSSJBookDashboardTile selected={selected} setSelected={setSelected} smallView={smallView} />
-        <WtDRBookDashboardTile selected={selected} setSelected={setSelected} smallView={smallView} />
+        <PSSJBookDashboardTile smallView={smallView} />
+        <WtDRBookDashboardTile smallView={smallView} />
       </div>
       <div className="flex-grow" />
     </div>

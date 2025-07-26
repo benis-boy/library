@@ -1,30 +1,20 @@
-import React from 'react';
+import { useContext } from 'react';
 import basicBookData from '../../basicBookData';
-import { SourceType } from '../../constants';
+import { LibraryContext } from '../../context/LibraryContext';
 import { useBookSelection } from './abstracts';
 
-const PSSJBookDashboardTile = ({
-  selected,
-  smallView,
-  setSelected,
-}: {
-  selected: SourceType | undefined;
-  setSelected: React.Dispatch<React.SetStateAction<SourceType | undefined>>;
-  smallView: boolean;
-}) => {
+const PSSJBookDashboardTile = ({ smallView }: { smallView: boolean }) => {
+  const lContext = useContext(LibraryContext);
+  const { setSelectedBook, libraryData } = lContext || { libraryData: {} };
   const bbd = basicBookData.find((bbd) => bbd.id === 'PSSJ')!;
-  const { setSelectedBook, hasStartedReading, isLargeScreen, isSelected, isSmallTile } = useBookSelection({
-    bbd,
-    selected,
-    smallView,
-  });
+  const isSelected = libraryData.selectedBook === bbd.id;
+  const { hasStartedReading, isLargeScreen, isSmallTile } = useBookSelection({ bbd, smallView });
 
   return (
     <div
       key={bbd.id}
       className={`shadow-lg rounded-lg overflow-hidden transform transition-all duration-300 w-72 hover:scale-105 hover:shadow-2xl flex ${isSelected ? 'border border-blue-500' : ''}`}
       onClick={() => {
-        setSelected((old) => (old === bbd.id ? undefined : bbd.id));
         setSelectedBook?.(bbd.id, false);
       }}
     >
