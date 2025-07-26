@@ -15,6 +15,8 @@ function HandleBook {
 }
 HandleBook -bookId "PSSJ"
 
+exit
+
 # Make the git commit
 if (-not (Test-Path .git)) {
     Write-Host "This is not a Git repository. Exiting..." -ForegroundColor Red

@@ -33,7 +33,7 @@ export const LibraryContext = createContext<LibraryContextType | undefined>({
 
 export function useLoadContent(setData: (data: string) => void) {
   const pContext = useContext(PatreonContext);
-  const { encryptionPassword } = pContext!;
+  const { encryptionPassword, encryptionPasswordV2 } = pContext!;
 
   async function loadContent(selectedBook: SourceType, selectedChapter: string, isSecured: boolean) {
     const path = `book-data/${selectedBook}/../${selectedChapter}`;
@@ -44,8 +44,15 @@ export function useLoadContent(setData: (data: string) => void) {
       }
 
       let data = await response.text();
-      if (isSecured) {
+      if (isSecured && selectedBook === 'PSSJ') {
         data = await decryptString(data, encryptionPassword);
+      } else if (isSecured) {
+        if (encryptionPasswordV2[selectedBook] === 'unset') {
+          console.error('Using encryption key before requesting it from backend. Try re-login.');
+        } else if (encryptionPasswordV2[selectedBook] === 'NOT_ALLOWED') {
+          console.error("Backend said you're not allowed. Which is weird. This function should only be callable after being allowed.");
+        }
+        data = await decryptString(data, encryptionPasswordV2[selectedBook]);
       }
 
       setData(data);

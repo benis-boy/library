@@ -1,5 +1,6 @@
 import { ReactNode, useEffect, useState } from 'react';
 import { MembershipData, PatreonContext, PatreonVerifierResponseBody } from './PatreonContext';
+import { SourceType } from '../constants';
 
 export const PatreonProvider = ({ children }: { children: ReactNode }) => {
   const [userInfo, setUserInfo] = useState<MembershipData | null>({
@@ -9,10 +10,12 @@ export const PatreonProvider = ({ children }: { children: ReactNode }) => {
   });
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [encryptionPassword, setEncryptionPassword] = useState('');
+  const [encryptionPasswordV2, setEncryptionPasswordV2] = useState<Record<SourceType, string>>({
+    PSSJ: 'unused',
+    WtDR: 'unset',
+  });
 
   const CLIENT_ID = 'DCmpYjAt5oF-1poN2N_hW22VXTuz8BNIOPk1yeoctffuvobAJCu8I7N7fKc1ngMp';
-  // const REDIRECT_URI = 'https://benis-boy.github.io/SSJ/';
-  // TODO set new URL
   const REDIRECT_URI = 'https://benis-boy.github.io/library/';
   const PATREON_OAUTH_URL = `https://www.patreon.com/oauth2/authorize?response_type=code&client_id=${CLIENT_ID}&redirect_uri=${REDIRECT_URI}&scope=identity%20identity.memberships`;
 
@@ -23,10 +26,11 @@ export const PatreonProvider = ({ children }: { children: ReactNode }) => {
       try {
         const token = JSON.parse(_token) as PatreonVerifierResponseBody;
 
-        const { userInfo, encryption_password } = token;
+        const { userInfo, encryption_password, encryption_passwordv2 } = token;
         setUserInfo(userInfo);
         setIsLoggedIn(true);
         setEncryptionPassword(encryption_password);
+        setEncryptionPasswordV2(encryption_passwordv2);
       } catch (e) {
         console.log(e);
       }
@@ -57,10 +61,11 @@ export const PatreonProvider = ({ children }: { children: ReactNode }) => {
     const data = await response.json();
     if (data) {
       localStorage.setItem('patreon_token', JSON.stringify(data));
-      const { userInfo, encryption_password } = data as PatreonVerifierResponseBody;
+      const { userInfo, encryption_password, encryption_passwordv2 } = data as PatreonVerifierResponseBody;
       setUserInfo(userInfo);
       setIsLoggedIn(true);
       setEncryptionPassword(encryption_password);
+      setEncryptionPasswordV2(encryption_passwordv2);
     } else {
       console.error('Error:', data);
     }
@@ -86,6 +91,7 @@ export const PatreonProvider = ({ children }: { children: ReactNode }) => {
         isLoggedIn,
         isSupporter: !!userInfo?.supportsMe,
         encryptionPassword,
+        encryptionPasswordV2,
         handleLogin,
         handleLogout,
       }}
