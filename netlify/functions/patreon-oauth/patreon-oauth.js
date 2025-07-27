@@ -43,7 +43,7 @@ exports.handler = async (event, context) => {
   const wtdrSecret = process.env.WTDR_SECRET_PASSWORD;
   const encryption_password = secret;
   const encryption_passwordv2 = {
-    WtDR: "NOT_ALLOWED",
+    WtDR: 'NOT_ALLOWED',
   };
 
   try {
@@ -112,12 +112,16 @@ exports.handler = async (event, context) => {
         (memberInfo) => memberInfo?.relationships?.campaign?.data?.id === '12346885'
       );
 
-      const everPaidAnything = (myMemberData?.lifetime_support_cents ?? myMemberData?.attributes?.lifetime_support_cents) > 0;
+      const everPaidAnything =
+        (myMemberData?.lifetime_support_cents ?? myMemberData?.attributes?.lifetime_support_cents) > 0;
       const isAugust = new Date().getFullYear() === 2025 && new Date().getMonth() === 7;
 
       const filteredMembershipData = {
         userName,
-        supportsMe: myMemberData?.attributes?.patron_status === 'active_patron' || userName === 'BenisBoy16' || (everPaidAnything && isAugust),
+        supportsMe:
+          myMemberData?.attributes?.patron_status === 'active_patron' ||
+          userName === 'BenisBoy16' ||
+          (everPaidAnything && isAugust),
         currently_entitled_tiers: myMemberData?.relationships?.currently_entitled_tiers,
       };
 
@@ -132,6 +136,7 @@ exports.handler = async (event, context) => {
         body: JSON.stringify({
           ...token,
           userInfo: filteredMembershipData,
+          membershipData: myMemberData,
           encryption_password,
           encryption_passwordv2,
         }),
