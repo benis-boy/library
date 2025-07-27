@@ -84,6 +84,16 @@ export const PatreonProvider = ({ children }: { children: ReactNode }) => {
     }
   }, []);
 
+  // One-Time force relogin
+  useEffect(() => {
+    const FLAG_KEY = 'forceRelogin_2025_07';
+    if (!localStorage.getItem(FLAG_KEY)) {
+      localStorage.setItem(FLAG_KEY, 'done');
+      handleLogout();
+      window.location.reload();
+    }
+  }, []);
+
   return (
     <PatreonContext.Provider
       value={{

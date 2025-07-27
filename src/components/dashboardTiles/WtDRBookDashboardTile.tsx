@@ -3,6 +3,7 @@ import basicBookData from '../../basicBookData';
 import { LibraryContext } from '../../context/LibraryContext';
 import { useBookSelection } from './abstracts';
 import WtDRDescription from './WtDRDescription';
+import { AmazonBuyButton } from '../general/AmazonButton';
 
 const WtDRBookDashboardTile = ({ smallView }: { smallView: boolean }) => {
   const lContext = useContext(LibraryContext);
@@ -80,30 +81,8 @@ const WtDRBookDashboardTile = ({ smallView }: { smallView: boolean }) => {
               {!isFlipped ? (
                 <></>
               ) : (
-                <div className={`flex flex-grow px-4 items-end ${isLargeScreen ? 'justify-end' : 'justify-center'}`}>
-                  <link
-                    rel="stylesheet"
-                    href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
-                  />
-                  <a
-                    href="https://www.amazon.com/dp/B0F9YHV31T"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2"
-                    style={{
-                      marginTop: '1.5rem',
-                      padding: '0.5rem 1rem',
-                      backgroundColor: '#ff9900',
-                      color: '#000',
-                      textDecoration: 'none',
-                      fontWeight: 'bold',
-                      borderRadius: '4px',
-                      boxShadow: '0 2px 5px rgba(0,0,0,0.2)',
-                    }}
-                  >
-                    <i className="fab fa-amazon pt-1.5" />
-                    <div>Buy a physical copy</div>
-                  </a>
+                <div className={`flex flex-grow px-4 pt-1 items-end ${isLargeScreen ? 'justify-end' : 'justify-center'}`}>
+                  <AmazonBuyButton asin="B0F9YHV31T" />
                 </div>
               )}
             </div>
