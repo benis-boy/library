@@ -14,7 +14,7 @@ function HandleBook {
     }
 }
 # HandleBook -bookId "PSSJ"
-# HandleBook -bookId "WtDR"
+HandleBook -bookId "WtDR"
 
 function ItemPlaceholder {
     param (
@@ -23,7 +23,7 @@ function ItemPlaceholder {
     $filePath = "public\navigation-data\$bookId`_navigation.html"
     (Get-Content $filePath) -replace '<li>Data', '<li>' | Set-Content $filePath
 }
-# ItemPlaceholder -bookId "WtDR"
+ItemPlaceholder -bookId "WtDR"
 
 # Make the git commit
 if (-not (Test-Path .git)) {
