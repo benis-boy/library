@@ -49,7 +49,7 @@ def update_basic_book_data(json_file, bookId, new_word_count):
 
 def normalize_paths(paths):
     """Normalize a list of paths."""
-    return [os.path.join(os.path.normpath(path)) for path in paths]
+    return [os.path.join("book-data", os.path.normpath(path)) if not path.startswith("book-data") else os.path.normpath(path) for path in paths]
 
 
 def parse_encrypted_md(encryption_base):
@@ -81,10 +81,12 @@ def parse_encrypted_md(encryption_base):
             elif section == 'files':
                 encrypted_files.append(path)
             elif section == 'exceptions' and current_folder:
-                exceptions[current_folder].append(path)
+                [norm_folder] = normalize_paths([current_folder])
+                exceptions[norm_folder].append(path)
         elif line.startswith("###"):
             current_folder = line[4:]
-            exceptions[current_folder] = []
+            [norm_folder] = normalize_paths([current_folder])
+            exceptions[norm_folder] = []
 
     # Normalize all paths after parsing
     encrypted_folders = normalize_paths(encrypted_folders)
@@ -100,7 +102,7 @@ def parse_encrypted_md(encryption_base):
 def is_encrypted_file(relative_path):
     """Check if a file should be encrypted based on the parsed and normalized data."""
     # Normalize the input path
-    relative_path = os.path.normpath(relative_path)
+    [relative_path] = normalize_paths([relative_path])
 
     # Check if file is specifically in the encrypted files list (normalized comparison)
     if relative_path in encrypted_files:
@@ -109,7 +111,8 @@ def is_encrypted_file(relative_path):
     # Check if file is in any encrypted folder
     for folder in encrypted_folders:
         # If the relative path starts with the folder path (as a substring)
-        if relative_path.startswith(folder):
+        [norm_folder] = normalize_paths([folder])
+        if relative_path.startswith(norm_folder):
             # Check if this file is in the exception list for this folder
             exception_list = exceptions.get(folder, [])
             if relative_path not in exception_list:
@@ -347,7 +350,7 @@ def update_index_html(directory, book_id):
 
             if is_encrypted_file(file_path):
                 new_ul_content.append(
-                    f'                <li style="display: flex; justify-content: space-between; align-items: center;"><a href="#" onclick="loadContent(\'{escaped_file}\', true); return false;" style="flex-grow: 1;">{display_title}</a><span>$</span></li>')
+                    f'                <li style="display: flex; justify-content: space-between; align-items: center;"><a href="#" onclick="loadContent(\'{escaped_file}\', true); return false;" style="flex-grow: 1; display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;"><span>{display_title}</span><span>$</span></a></li>')
             else:
                 new_ul_content.append(
                     f'                <li><a href="#" onclick="loadContent(\'{escaped_file}\'); return false;">{display_title}</a></li>')

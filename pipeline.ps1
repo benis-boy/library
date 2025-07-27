@@ -3,7 +3,7 @@ function HandleBook {
         [string]$bookId
     )
     python .\deployment\modifyExport.py $bookId "book-data\$bookId`_export.md" "book-data\encrypted_files.md" "src\basicBookData.json"
-    python .\deployment\encryptExport.py "book-data\$bookId" "book-data\encrypted_files.md"
+    python .\deployment\encryptExport.py $bookId "book-data\$bookId" "book-data\encrypted_files.md"
     Copy-Item -Path "book-data\$bookId`_navigation.html" -Destination "public\navigation-data\$bookId`_navigation.html" -Force
     Copy-Item -Path "book-data\$bookId" -Destination "public\book-data" -Recurse -Force
 
@@ -13,10 +13,17 @@ function HandleBook {
         Get-ChildItem -Path $destPath -Recurse -Filter *.webnovel.html | Remove-Item -Force
     }
 }
-# HandleBook -bookId "PSSJ"
+HandleBook -bookId "PSSJ"
 HandleBook -bookId "WtDR"
 
-exit
+function ItemPlaceholder {
+    param (
+        [string]$bookId
+    )
+     $filePath = "public\navigation-data\$bookId`_navigation.html"
+    (Get-Content $filePath) -replace '<li>Data', '<li>' | Set-Content $filePath
+}
+ItemPlaceholder -bookId "WtDR"
 
 # Make the git commit
 if (-not (Test-Path .git)) {

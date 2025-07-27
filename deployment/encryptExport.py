@@ -9,9 +9,15 @@ import base64
 import sys
 
 
-def normalize_paths(paths):
+book_id_to_secret_path = {
+    "PSSJ": "secret.txt",
+    "WtDR": "WtDR_secret.txt"
+}
+
+
+def normalize_paths(paths: list[str]):
     """Normalize a list of paths."""
-    return [os.path.join("book-data", os.path.normpath(path)) for path in paths]
+    return [os.path.join("book-data", os.path.normpath(path)) if not path.startswith("book-data") else os.path.normpath(path) for path in paths]
 
 
 def parse_encrypted_md(encryption_base):
@@ -43,10 +49,12 @@ def parse_encrypted_md(encryption_base):
             elif section == 'files':
                 encrypted_files.append(path)
             elif section == 'exceptions' and current_folder:
-                exceptions[current_folder].append(path)
+                [norm_folder] = normalize_paths([current_folder])
+                exceptions[norm_folder].append(path)
         elif line.startswith("###"):
             current_folder = line[4:]
-            exceptions[current_folder] = []
+            [norm_folder] = normalize_paths([current_folder])
+            exceptions[norm_folder] = []
 
     # Normalize all paths after parsing
     encrypted_folders = normalize_paths(encrypted_folders)
@@ -62,7 +70,7 @@ def parse_encrypted_md(encryption_base):
 def is_encrypted_file(relative_path):
     """Check if a file should be encrypted based on the parsed and normalized data."""
     # Normalize the input path
-    relative_path = os.path.normpath(relative_path)
+    [relative_path] = normalize_paths([relative_path])
 
     # Check if file is specifically in the encrypted files list (normalized comparison)
     if relative_path in encrypted_files:
@@ -71,9 +79,10 @@ def is_encrypted_file(relative_path):
     # Check if file is in any encrypted folder
     for folder in encrypted_folders:
         # If the relative path starts with the folder path (as a substring)
-        if relative_path.startswith(folder):
+        [norm_folder] = normalize_paths([folder])
+        if relative_path.startswith(norm_folder):
             # Check if this file is in the exception list for this folder
-            exception_list = exceptions.get(folder, [])
+            exception_list = exceptions.get(norm_folder, [])
             if relative_path not in exception_list:
                 return True
 
@@ -129,15 +138,13 @@ def encrypt_file(file_path, password):
 
 
 def encrypt_folder(src_folder, password):
-    print(encrypted_folders, encrypted_files, exceptions)
+    print("encryption info", encrypted_folders, encrypted_files, exceptions)
     for root, _, files in os.walk(src_folder):
         for file in files:
             file_path = os.path.join(root, file)
-            if is_encrypted_file(file_path):
+            if is_encrypted_file(os.path.normpath(file_path)):
                 encrypt_file(file_path, password)
     print(f"All files in {src_folder} have been encrypted.")
-
-# Main function
 
 
 def process_folder(src_folder, password):
@@ -173,19 +180,20 @@ def remove_non_html_files(folder_path):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 3:
-        print("Usage: python encryptExport.py \"...pathTo_modifyExportResults\" \"...encrypted_files.md\"")
+    if len(sys.argv) < 4:
+        print("Usage: python encryptExport.py <bookId> \"...pathTo_modifyExportResults\" \"...encrypted_files.md\"")
         exit()
-    folder_path = sys.argv[1]
+    bookId = sys.argv[1]
+    folder_path = sys.argv[2]
     if not os.path.exists(folder_path):
         print("Path does not exist", folder_path)
         exit()
-    encryption_base_data = sys.argv[2]
+    encryption_base_data = sys.argv[3]
     if not os.path.exists(encryption_base_data):
         print("File does not exist", encryption_base_data)
         exit()
 
-    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "secret.txt"), "r") as f:
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), book_id_to_secret_path[bookId]), "r") as f:
         password = "\n".join(f.readlines()).strip()
 
     if password is None:

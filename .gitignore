@@ -30,4 +30,5 @@ apps/simple-tts
 *_raw/
 /book-data
 secret.txt
+*_secret.txt
 *.webnovel.html

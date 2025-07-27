@@ -23,18 +23,18 @@ export const LibraryProvider = ({ children }: { children: ReactNode }) => {
   const loadContent = useLoadContent((data) => setLibraryData((old) => ({ ...old, content: data })));
 
   const setSelectedBook = (book: SourceType, loadChapterToo: boolean) => {
-    setLibraryData((old) => ({ ...old, selectedBook: book }));
+    setLibraryData((old) => ({ ...old, selectedBook: book, selectedChapter: undefined }));
     localStorage.setItem('SELECTED_BOOK', book);
     const tryLoadOldChapter = localStorage.getItem(book + '_SELECTED_CHAPTER') || undefined;
     const isEncrypted = tryLoadOldChapter
       ? localStorage.getItem(`IS_ENCRYPTED_${book}_${tryLoadOldChapter}`)! === 'true'
       : false;
 
-    if (isEncrypted && !pContext?.isLoggedIn) {
+    if (isEncrypted && !pContext?.isLoggedIn && loadChapterToo) {
       setOtherPageInfoType('not_logged_in');
       return;
     }
-    if (isEncrypted && !pContext?.isSupporter) {
+    if (isEncrypted && !pContext?.isSupporter && loadChapterToo) {
       setOtherPageInfoType('not_a_supporter');
       return;
     }

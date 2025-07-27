@@ -27,8 +27,8 @@ const PSSJBookDashboardTile = ({ smallView }: { smallView: boolean }) => {
         />
         <div className="p-2 text-center flex-grow flex flex-col">
           <h2 className="font-bold my-2">{bbd.title}</h2>
-          <div className="flex flex-grow">
-            <div className="flex flex-grow flex-col text-center">
+          <div className="flex flex-grow flex-col">
+            <div className="flex flex-grow flex-row text-center">
               <p className={`${isSmallTile ? 'text-xs' : 'text-base'} flex-grow`}>{bbd.wordCountData}</p>
               <p className={`${isSmallTile ? 'text-xs' : 'text-base'} flex-grow`}>{bbd.lastUpdate}</p>
             </div>
@@ -41,7 +41,7 @@ const PSSJBookDashboardTile = ({ smallView }: { smallView: boolean }) => {
                   onClick={() => {
                     setSelectedBook?.(bbd.id, true);
                   }}
-                  className="px-1 max-w-18 py-1 bg-[#872341] hover:scale-105 text-white font-semibold rounded-lg shadow-md transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-opacity-50"
+                  className="px-4 my-2 py-1 bg-[#872341] hover:scale-105 text-white font-semibold rounded-lg shadow-md transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-opacity-50"
                 >
                   {hasStartedReading ? 'Continue where you left off' : 'Start Reading'}
                 </button>
