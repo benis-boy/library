@@ -43,7 +43,7 @@ export const Homepage = () => {
         <PSSJBookDashboardTile smallView={smallView} />
         <WtDRBookDashboardTile smallView={smallView} />
       </div>
-      <div className="flex-grow" />
+      <div className="flex-grow min-h-10" />
     </div>
   );
 };
