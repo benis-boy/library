@@ -13,7 +13,7 @@ function HandleBook {
         Get-ChildItem -Path $destPath -Recurse -Filter *.webnovel.html | Remove-Item -Force
     }
 }
-HandleBook -bookId "PSSJ"
+# HandleBook -bookId "PSSJ"
 # HandleBook -bookId "WtDR"
 
 function ItemPlaceholder {
