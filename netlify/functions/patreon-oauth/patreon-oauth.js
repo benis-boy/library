@@ -40,7 +40,11 @@ exports.handler = async (event, context) => {
   const token_url = 'https://www.patreon.com/api/oauth2/token?';
 
   const secret = process.env.NETLIFY_SECRET_PASSWORD;
+  const wtdrSecret = process.env.WTDR_SECRET_PASSWORD;
   const encryption_password = secret;
+  const encryption_passwordv2 = {
+    WtDR: "NOT_ALLOWED",
+  };
 
   try {
     // Send a POST request to exchange the authorization code for an access token
@@ -103,21 +107,34 @@ exports.handler = async (event, context) => {
       const userInfo = await userDataResponse.json();
 
       const userName = userInfo.data.attributes.vanity ?? userInfo.data.attributes.full_name ?? 'CouldNotFindName';
-      const memberData = userInfo.included.filter((something) => something.type === 'member');
-      const myMemberData = memberData.find(
+      const generalMemberData = userInfo.included.filter((something) => something.type === 'member');
+      const myMemberData = generalMemberData.find(
         (memberInfo) => memberInfo?.relationships?.campaign?.data?.id === '12346885'
       );
+
+      const everPaidAnything = (myMemberData?.lifetime_support_cents ?? myMemberData?.attributes?.lifetime_support_cents) > 0;
+      const isAugust = new Date().getFullYear() === 2025 && new Date().getMonth() === 7;
+
       const filteredMembershipData = {
         userName,
-        supportsMe: myMemberData?.attributes?.patron_status === 'active_patron' || userName === 'BenisBoy16',
+        supportsMe: myMemberData?.attributes?.patron_status === 'active_patron' || userName === 'BenisBoy16' || (everPaidAnything && isAugust),
         currently_entitled_tiers: myMemberData?.relationships?.currently_entitled_tiers,
       };
+
+      if (filteredMembershipData.supportsMe) {
+        encryption_passwordv2.WtDR = wtdrSecret;
+      }
 
       // Return the access token to the frontend
       return {
         statusCode: 200,
         headers,
-        body: JSON.stringify({ ...token, userInfo: filteredMembershipData, encryption_password }),
+        body: JSON.stringify({
+          ...token,
+          userInfo: filteredMembershipData,
+          encryption_password,
+          encryption_passwordv2,
+        }),
       };
     } else {
       // Handle errors from Patreon API
