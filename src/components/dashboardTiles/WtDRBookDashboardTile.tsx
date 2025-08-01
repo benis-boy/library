@@ -82,7 +82,7 @@ const WtDRBookDashboardTile = ({ smallView }: { smallView: boolean }) => {
                 <></>
               ) : (
                 <div className={`flex flex-grow px-4 pt-1 items-end ${isLargeScreen ? 'justify-end' : 'justify-center'}`}>
-                  <AmazonBuyButton asin="B0F9YHV31T" />
+                  <AmazonBuyButton asin="3911949014" />
                 </div>
               )}
             </div>
