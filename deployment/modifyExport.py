@@ -268,6 +268,7 @@ def txt_to_html(file_path, handle_hr=True):
 
     # Wrap text between "*" with <em> tags
     text = re.sub(r'\*(.*?)\*', r'<em>\1</em>', text)
+    text = re.sub(r'\_(.*?)\_', r'<em>\1</em>', text)
 
     # Add <p> tags around paragraphs
     lines = text.split('\n')
