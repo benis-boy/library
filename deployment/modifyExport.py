@@ -133,9 +133,9 @@ def clean_markdown_file(file_path, output_file_path):
     if match:
         content = content[match.start():]
 
-    # 2. Remove trailing text after the pattern "\n\n\n---\n\n#########"
-    content = re.sub(r'\n\n\n---\n\n#########.*$',
-                     '', content, flags=re.DOTALL)
+    # 2. Remove trailing text after the pattern "#########"
+    content = re.split(r'\n*---\n*#########',
+                       content, 0, flags=re.DOTALL)[0]
 
     # Write the cleaned content back to the file (or to a new file if preferred)
     with open(output_file_path, 'w', encoding='utf-8') as file:
@@ -228,7 +228,7 @@ def split_md_to_txt(md_file, current_directory):
                     scene_chapter_folder), exist_ok=True)
 
         # Split chapter into scenes using the delimiter
-        scenes = re.split(r'\n\n\n---\n\n\n', section_content)
+        scenes = re.split(r'\n\n\n\n\n---\n\n\n\n\n', section_content)
 
         for j, scene in enumerate(scenes):
             scene = scene.strip()
@@ -259,8 +259,17 @@ def txt_to_html(file_path, handle_hr=True):
     text = html.escape(text)
     text = text.replace('\xb0', '&deg;')  # degree symbol
 
+    # --- Process :code: blocks ---
+    def process_code_block(match):
+        content = match.group(1).strip()
+        # Keep internal newlines via <br /> while removing paragraph structure
+        cleaned_content = content.replace('\n', '<br />')
+        return f'<p class="code-block">{cleaned_content}</p>'
+
+    text = re.sub(r':code:(.*?):/code:',
+                  process_code_block, text, flags=re.DOTALL)
+
     if handle_hr:
-        # Replace "---" with "<br />---<br />"
         text = text.replace('---', '<hr />')
 
     # Wrap text between "**" with <strong> tags
@@ -268,7 +277,7 @@ def txt_to_html(file_path, handle_hr=True):
 
     # Wrap text between "*" with <em> tags
     text = re.sub(r'\*(.*?)\*', r'<em>\1</em>', text)
-    text = re.sub(r'\_(.*?)\_', r'<em>\1</em>', text)
+    text = re.sub(r'(?<!_)_(?!_)(.*?)_(?!_)', r'<em>\1</em>', text)
 
     # Add <p> tags around paragraphs
     lines = text.split('\n')
@@ -324,7 +333,6 @@ def update_index_html(directory, book_id):
             total_words += count_words_in_html(content, file_path)
 
     # Create new content for the links section
-    new_content = []
     volume_dict = {}
 
     for file in html_files:
@@ -337,14 +345,24 @@ def update_index_html(directory, book_id):
             volume_dict[volume_name] = []
         volume_dict[volume_name].append((chapter_name, file))
 
+    # Sorts by converting the first sequence of digits found in the key to an integer
+    sorted_volumes = sorted(
+        volume_dict.items(),
+        key=lambda item: int(re.search(r'\d+', item[0]).group())
+    )
+
     new_ul_content = []
-    for volume_name, chapters in volume_dict.items():
-        new_ul_content.append(f'        <li>{volume_name}\n            <ul>')
+    for volume_name, chapters in sorted_volumes:
+        new_ul_content.append(
+            f'        <li>{volume_name}\n            <ul>')
         for chapter_name, file_path in chapters:
             # Normalize path separators
             normalized_file = os.path.normpath(file_path)
+
             display_title = chapter_title_mapping.get(
                 os.path.splitext(normalized_file)[0], chapter_name.replace("_", " ", 1))
+
+            # --- NAVIGATION: Keeps filesystem paths ---
             # Escape special characters in the file path
             escaped_file = normalized_file.replace(
                 "\\", "\\\\").replace("'", "\\'")

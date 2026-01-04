@@ -2,6 +2,19 @@ function HandleBook {
     param (
         [string]$bookId
     )
+    # Cleanup old folders
+    $pathsToRemove = @(
+        "book-data\$bookId",
+        "book-data\$bookId`_raw",
+        "public\book-data\$bookId"
+    )
+
+    foreach ($path in $pathsToRemove) {
+        if (Test-Path $path) {
+            Remove-Item -Path $path -Recurse -Force
+        }
+    }
+    
     python .\deployment\modifyExport.py $bookId "book-data\$bookId`_export.md" "book-data\encrypted_files.md" "src\basicBookData.json"
     python .\deployment\encryptExport.py $bookId "book-data\$bookId" "book-data\encrypted_files.md"
     Copy-Item -Path "book-data\$bookId`_navigation.html" -Destination "public\navigation-data\$bookId`_navigation.html" -Force
@@ -13,8 +26,10 @@ function HandleBook {
         Get-ChildItem -Path $destPath -Recurse -Filter *.webnovel.html | Remove-Item -Force
     }
 }
-# HandleBook -bookId "PSSJ"
-HandleBook -bookId "WtDR"
+HandleBook -bookId "PSSJ"
+# HandleBook -bookId "WtDR"
+
+# exit 0
 
 function ItemPlaceholder {
     param (
@@ -23,7 +38,9 @@ function ItemPlaceholder {
     $filePath = "public\navigation-data\$bookId`_navigation.html"
     (Get-Content $filePath) -replace '<li>Data', '<li>' | Set-Content $filePath
 }
-ItemPlaceholder -bookId "WtDR"
+# ItemPlaceholder -bookId "WtDR"
+
+# exit 0
 
 # Make the git commit
 if (-not (Test-Path .git)) {

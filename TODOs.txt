@@ -1,0 +1,3 @@
+TODOs:
+
+- add image support to homepage
