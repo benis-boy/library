@@ -286,7 +286,7 @@ def txt_to_html(file_path, handle_hr=True):
 
     for line in lines:
         stripped = line.strip()
-        if new_paragraph and stripped:
+        if new_paragraph and stripped and not new_paragraph.startswith('<p class="code-block">'):
             if stripped == "<hr />":
                 wrapped_lines.append(stripped)
                 continue
