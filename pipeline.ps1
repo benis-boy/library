@@ -25,6 +25,14 @@ function HandleBook {
     if (Test-Path $destPath) {
         Get-ChildItem -Path $destPath -Recurse -Filter *.webnovel.html | Remove-Item -Force
     }
+
+    # Replace '#' with '_' in filenames
+    Get-ChildItem -Path $destPath -Recurse -File |
+    Where-Object { $_.Name -like '*#*' } |
+    ForEach-Object {
+        $newName = $_.Name -replace '#', '_'
+        Rename-Item -Path $_.FullName -NewName $newName -Force
+    }
 }
 HandleBook -bookId "PSSJ"
 # HandleBook -bookId "WtDR"

@@ -367,8 +367,9 @@ def update_index_html(directory, book_id):
 
             # --- NAVIGATION: Keeps filesystem paths ---
             # Escape special characters in the file path
+            # replace # with _
             escaped_file = normalized_file.replace(
-                "\\", "\\\\").replace("'", "\\'")
+                "\\", "\\\\").replace("'", "\\'").replace("#", "_")
 
             if is_encrypted_file(file_path):
                 new_ul_content.append(
