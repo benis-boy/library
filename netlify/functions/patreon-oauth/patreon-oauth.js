@@ -120,7 +120,6 @@ exports.handler = async (event, context) => {
         supportsMe:
           myMemberData?.attributes?.patron_status === 'active_patron' ||
           userName === 'BenisBoy16' ||
-          ["nathaniel jackson"].includes(userName) ||
           (everPaidAnything && isAugust),
         currently_entitled_tiers: myMemberData?.relationships?.currently_entitled_tiers,
       };
