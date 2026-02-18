@@ -1,7 +1,7 @@
 import { getAmazonDomain } from "./AmazonButton";
 import InfoText from "./StyledComponents";
 
-export function AmazonBuyButton({ asin }: { asin: string }) {
+export function ExclusiveAmazonButton({ asin }: { asin: string }) {
   const locale = Intl.DateTimeFormat().resolvedOptions().locale || 'en-US';
   const domain = getAmazonDomain(locale);
   const href = `https://assoc-redirect.amazon.com/g/r/https://${domain}/dp/${asin}`;

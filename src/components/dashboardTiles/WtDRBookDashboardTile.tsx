@@ -4,13 +4,15 @@ import { LibraryContext } from '../../context/LibraryContext';
 import { useBookSelection } from './abstracts';
 import WtDRDescription from './WtDRDescription';
 import { AmazonBuyButton } from '../general/AmazonButton';
+import { ExclusiveAmazonButton } from '../general/ExclusiveOnAmazonButton';
 
 const WtDRBookDashboardTile = ({ smallView }: { smallView: boolean }) => {
   const lContext = useContext(LibraryContext);
   const { setSelectedBook, libraryData } = lContext || { libraryData: {} };
   const bbd = basicBookData.find((bbd) => bbd.id === 'WtDR')!;
   const isSelected = libraryData.selectedBook === bbd.id;
-  const { hasStartedReading, isLargeScreen, isSmallTile } = useBookSelection({ bbd, smallView });
+  // const { hasStartedReading, isLargeScreen, isSmallTile } = useBookSelection({ bbd, smallView });
+  const { isLargeScreen, isSmallTile } = useBookSelection({ bbd, smallView });
 
   const [_isFlipped, setIsFlipped] = useState(false);
   const isFlipped = _isFlipped && !isSmallTile;
@@ -64,14 +66,15 @@ const WtDRBookDashboardTile = ({ smallView }: { smallView: boolean }) => {
                   className="flex flex-grow flex-col items-center justify-center"
                   onClick={!isLargeScreen ? (e) => e.stopPropagation() : undefined}
                 >
-                  <button
+                  <ExclusiveAmazonButton asin="3911949014" />
+                  {/* <button
                     onClick={() => {
                       setSelectedBook?.(bbd.id, true);
                     }}
                     className="px-4 my-2 py-1 bg-[#872341] hover:scale-105 text-white font-semibold rounded-lg shadow-md transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-opacity-50"
                   >
                     {hasStartedReading ? 'Continue where you left off' : 'Start Reading'}
-                  </button>
+                  </button> */}
                 </div>
               )}
             </div>
@@ -81,7 +84,9 @@ const WtDRBookDashboardTile = ({ smallView }: { smallView: boolean }) => {
               {!isFlipped ? (
                 <></>
               ) : (
-                <div className={`flex flex-grow px-4 pt-1 items-end ${isLargeScreen ? 'justify-end' : 'justify-center'}`}>
+                <div
+                  className={`flex flex-grow px-4 pt-1 items-end ${isLargeScreen ? 'justify-end' : 'justify-center'}`}
+                >
                   <AmazonBuyButton asin="3911949014" />
                 </div>
               )}
