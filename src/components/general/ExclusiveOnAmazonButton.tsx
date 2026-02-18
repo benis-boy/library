@@ -1,28 +1,5 @@
-import InfoText from './StyledComponents';
-
-export const amazonDomains: Record<string, string> = {
-  US: 'amazon.com',
-  GB: 'amazon.co.uk',
-  DE: 'amazon.de',
-  FR: 'amazon.fr',
-  IT: 'amazon.it',
-  ES: 'amazon.es',
-  CA: 'amazon.ca',
-  AU: 'amazon.com.au',
-  IN: 'amazon.in',
-};
-
-export function getAmazonDomain(locale: string): string {
-  const parts = locale.split('-');
-  const lang = parts[0]?.toUpperCase(); // e.g. "DE" from "de"
-  const region = parts[1]?.toUpperCase(); // e.g. "US" from "en-US"
-
-  return (
-    amazonDomains[region] || // prioritize region
-    amazonDomains[lang] || // fallback to language
-    'amazon.com' // default
-  );
-}
+import { getAmazonDomain } from "./AmazonButton";
+import InfoText from "./StyledComponents";
 
 export function AmazonBuyButton({ asin }: { asin: string }) {
   const locale = Intl.DateTimeFormat().resolvedOptions().locale || 'en-US';
@@ -47,9 +24,9 @@ export function AmazonBuyButton({ asin }: { asin: string }) {
         }}
       >
         <i className="fab fa-amazon pt-1.5" /> {/* or your SVG/icon */}
-        Buy it on {domain}
+        Exclusive on {domain}
       </a>
-      <InfoText>Please ensure the domain is correct 😊</InfoText>
+      <InfoText>Until 19 May 2026</InfoText>
     </div>
   );
 }
