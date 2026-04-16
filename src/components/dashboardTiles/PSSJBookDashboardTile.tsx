@@ -38,7 +38,8 @@ const PSSJBookDashboardTile = ({ smallView }: { smallView: boolean }) => {
                 onClick={!isLargeScreen ? (e) => e.stopPropagation() : undefined}
               >
                 <button
-                  onClick={() => {
+                  onClick={(e) => {
+                    e.stopPropagation();
                     setSelectedBook?.(bbd.id, true);
                   }}
                   className="px-4 my-2 py-1 bg-[#872341] hover:scale-105 text-white font-semibold rounded-lg shadow-md transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-opacity-50"
