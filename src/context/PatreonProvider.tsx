@@ -13,6 +13,7 @@ export const PatreonProvider = ({ children }: { children: ReactNode }) => {
   const [encryptionPasswordV2, setEncryptionPasswordV2] = useState<Record<SourceType, string>>({
     PSSJ: 'unused',
     WtDR: 'unset',
+    SoWB: 'not-set'
   });
 
   const CLIENT_ID = 'DCmpYjAt5oF-1poN2N_hW22VXTuz8BNIOPk1yeoctffuvobAJCu8I7N7fKc1ngMp';

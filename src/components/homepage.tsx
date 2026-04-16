@@ -7,6 +7,7 @@ import { ConfigurationContext } from '../context/ConfigurationContext';
 import { LibraryContext } from '../context/LibraryContext';
 import PSSJBookDashboardTile from './dashboardTiles/PSSJBookDashboardTile';
 import WtDRBookDashboardTile from './dashboardTiles/WtDRBookDashboardTile';
+import SoWBBookDashboardTile from './dashboardTiles/SoWBBookDashboardTile';
 
 export const Homepage = () => {
   const { isDarkMode } = useContext(ConfigurationContext);
@@ -42,6 +43,7 @@ export const Homepage = () => {
       <div className="flex flex-col sm:flex-row gap-5">
         <PSSJBookDashboardTile smallView={smallView} />
         <WtDRBookDashboardTile smallView={smallView} />
+        <SoWBBookDashboardTile smallView={smallView} />
       </div>
       <div className="flex-grow min-h-10" />
     </div>

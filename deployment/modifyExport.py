@@ -349,10 +349,12 @@ def update_index_html(directory, book_id):
         volume_dict[volume_name].append((chapter_name, file))
 
     # Sorts by converting the first sequence of digits found in the key to an integer
-    sorted_volumes = sorted(
-        volume_dict.items(),
-        key=lambda item: int(re.search(r'\d+', item[0]).group())
-    )
+    # Falls back to 0 for volume names without digits
+    def get_sort_key(item):
+        match = re.search(r'\d+', item[0])
+        return int(match.group()) if match else 0
+
+    sorted_volumes = sorted(volume_dict.items(), key=get_sort_key)
 
     new_ul_content = []
     for volume_name, chapters in sorted_volumes:

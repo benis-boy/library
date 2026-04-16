@@ -15,5 +15,14 @@
     "wordCountData": "81.000 Words",
     "lastUpdate": "Last updated on 26 Jul 2025",
     "isReady": true
+  },
+  {
+    "id": "SoWB",
+    "title": "Saint of Wrath - Birmingham",
+    "assetId": "assets/SoWB_cover.jpg",
+    "assetIdBack": "assets/SoWB_cover.jpg",
+    "wordCountData": "7.000 Words",
+    "lastUpdate": "Added on 16 Apr 2026",
+    "isReady": true
   }
 ]

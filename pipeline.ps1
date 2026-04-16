@@ -34,8 +34,9 @@ function HandleBook {
         Rename-Item -Path $_.FullName -NewName $newName -Force
     }
 }
-HandleBook -bookId "PSSJ"
+# HandleBook -bookId "PSSJ"
 # HandleBook -bookId "WtDR"
+# HandleBook -bookId "SoWB"
 
 # exit 0
 
@@ -47,6 +48,7 @@ function ItemPlaceholder {
     (Get-Content $filePath) -replace '<li>Data', '<li>' | Set-Content $filePath
 }
 # ItemPlaceholder -bookId "WtDR"
+# ItemPlaceholder -bookId "SoWB"
 
 # exit 0
 

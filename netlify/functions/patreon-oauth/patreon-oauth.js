@@ -41,9 +41,11 @@ exports.handler = async (event, context) => {
 
   const secret = process.env.NETLIFY_SECRET_PASSWORD;
   const wtdrSecret = process.env.WTDR_SECRET_PASSWORD;
+  const sowbSecret = process.env.SOWB_SECRET_PASSWORD;
   const encryption_password = secret;
   const encryption_passwordv2 = {
     WtDR: 'NOT_ALLOWED',
+    SoWB: 'NOT_ALLOWED'
   };
 
   try {
@@ -126,6 +128,7 @@ exports.handler = async (event, context) => {
 
       if (filteredMembershipData.supportsMe) {
         encryption_passwordv2.WtDR = wtdrSecret;
+        encryption_passwordv2.SoWB = sowbSecret;
       }
 
       // Return the access token to the frontend

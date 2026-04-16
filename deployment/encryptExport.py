@@ -11,7 +11,8 @@ import sys
 
 book_id_to_secret_path = {
     "PSSJ": "secret.txt",
-    "WtDR": "WtDR_secret.txt"
+    "WtDR": "WtDR_secret.txt",
+    "SoWB": "SoWB_secret.txt"
 }
 
 
