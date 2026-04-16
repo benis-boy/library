@@ -139,18 +139,39 @@ export const Navigator = ({
         const iframeDocument = iframeRef.current.contentDocument;
         if (iframeDocument) {
           const links = iframeDocument.querySelectorAll('a');
-
+          console.log('[Next Chapter Debug] selectedChapter:', selectedChapter);
+          console.log('[Next Chapter Debug] links count:', links.length);
+          let found = false;
           for (let index = 0; index < links.length; index++) {
             const link = links[index];
-            if (selectedChapter && getParamsInsideLoadContentOuterHtml(link)?.chapter.includes(selectedChapter)) {
+            const params = getParamsInsideLoadContentOuterHtml(link);
+            console.log(
+              '[Next Chapter Debug] checking link',
+              index,
+              ':',
+              params?.chapter,
+              'vs',
+              selectedChapter,
+              'match:',
+              params?.chapter?.includes(selectedChapter || '')
+            );
+            if (selectedChapter && params?.chapter?.includes(selectedChapter)) {
+              found = true;
+              console.log('[Next Chapter Debug] Found current chapter at index', index);
               if (index + 1 < links.length) {
                 const nextLink = links[index + 1];
                 const { chapter, isPaid } = getParamsInsideLoadContentOuterHtml(nextLink)!;
+                console.log('[Next Chapter Debug] Going to next chapter:', chapter);
                 setSelectedChapter?.(chapter, isPaid);
               } else {
+                console.log('[Next Chapter Debug] Reached end of book');
                 showOtherPage?.('end_of_book');
               }
+              break;
             }
+          }
+          if (!found) {
+            console.log('[Next Chapter Debug] Current chapter not found in navigation');
           }
         }
       }
