@@ -9,7 +9,7 @@ export type LibraryContextType = {
     content: string;
   };
   setSelectedBook: (book: SourceType, loadChapterToo: boolean) => void;
-  setSelectedChapter: (chapter: string, secured: boolean) => void;
+  setSelectedChapter: (book: SourceType, chapter: string, secured: boolean) => void;
   otherPageInfo: {
     pageType: false | 'homepage' | 'not_a_supporter' | 'not_logged_in' | 'configuration' | 'end_of_book';
     showOtherPage: (
@@ -50,7 +50,9 @@ export function useLoadContent(setData: (data: string) => void) {
         if (encryptionPasswordV2[selectedBook] === 'unset') {
           console.error('Using encryption key before requesting it from backend. Try re-login.');
         } else if (encryptionPasswordV2[selectedBook] === 'NOT_ALLOWED') {
-          console.error("Backend said you're not allowed. Which is weird. This function should only be callable after being allowed.");
+          console.error(
+            "Backend said you're not allowed. Which is weird. This function should only be callable after being allowed."
+          );
         }
         data = await decryptString(data, encryptionPasswordV2[selectedBook]);
       }

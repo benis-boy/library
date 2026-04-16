@@ -1,5 +1,6 @@
 import { SwipeableDrawer, useMediaQuery, useTheme } from '@mui/material';
 import { Fragment, useContext, useEffect, useRef } from 'react';
+import { SourceType } from '../constants';
 import { ConfigurationContext } from '../context/ConfigurationContext';
 import { LibraryContext } from '../context/LibraryContext';
 
@@ -22,10 +23,10 @@ export const Navigator = ({
   const lContext = useContext(LibraryContext);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const {
-    libraryData: { selectedBook, selectedChapter },
+    libraryData: { selectedBook, selectedChapter } = {} as { selectedBook: SourceType; selectedChapter?: string },
     otherPageInfo,
     setSelectedChapter,
-  } = lContext || { libraryData: {} };
+  } = lContext || {};
 
   const getParamsInsideLoadContentOuterHtml = (link: HTMLAnchorElement) => {
     const match = link.outerHTML.match(/loadContent\(([^)]+)\)/);
@@ -56,14 +57,14 @@ export const Navigator = ({
 
       if (event.data.type === 'link-clicked') {
         const chapter = event.data?.url;
-        setSelectedChapter?.(chapter, event.data.isPaid);
+        setSelectedChapter?.(selectedBook, chapter, event.data.isPaid);
       }
     };
     window.addEventListener('message', handleMessage);
     return () => {
       window.removeEventListener('message', handleMessage);
     };
-  }, [setSelectedChapter]);
+  }, [setSelectedChapter, selectedBook]);
 
   useEffect(() => {
     // Highlight selected chapter after iframe loads
@@ -137,41 +138,22 @@ export const Navigator = ({
     const handleLoadNextChapter = () => {
       if (iframeRef.current) {
         const iframeDocument = iframeRef.current.contentDocument;
+        const currentChapter = lContext?.libraryData.selectedChapter;
         if (iframeDocument) {
           const links = iframeDocument.querySelectorAll('a');
-          console.log('[Next Chapter Debug] selectedChapter:', selectedChapter);
-          console.log('[Next Chapter Debug] links count:', links.length);
-          let found = false;
+
           for (let index = 0; index < links.length; index++) {
             const link = links[index];
-            const params = getParamsInsideLoadContentOuterHtml(link);
-            console.log(
-              '[Next Chapter Debug] checking link',
-              index,
-              ':',
-              params?.chapter,
-              'vs',
-              selectedChapter,
-              'match:',
-              params?.chapter?.includes(selectedChapter || '')
-            );
-            if (selectedChapter && params?.chapter?.includes(selectedChapter)) {
-              found = true;
-              console.log('[Next Chapter Debug] Found current chapter at index', index);
+            if (currentChapter && getParamsInsideLoadContentOuterHtml(link)?.chapter.includes(currentChapter)) {
               if (index + 1 < links.length) {
                 const nextLink = links[index + 1];
                 const { chapter, isPaid } = getParamsInsideLoadContentOuterHtml(nextLink)!;
-                console.log('[Next Chapter Debug] Going to next chapter:', chapter);
-                setSelectedChapter?.(chapter, isPaid);
+                setSelectedChapter?.(selectedBook, chapter, isPaid);
               } else {
-                console.log('[Next Chapter Debug] Reached end of book');
                 showOtherPage?.('end_of_book');
               }
               break;
             }
-          }
-          if (!found) {
-            console.log('[Next Chapter Debug] Current chapter not found in navigation');
           }
         }
       }
@@ -181,7 +163,7 @@ export const Navigator = ({
     return () => {
       window.removeEventListener('loadNextChapter', handleLoadNextChapter);
     };
-  }, [showOtherPage, selectedChapter, setSelectedChapter]);
+  }, [showOtherPage, selectedBook, lContext?.libraryData.selectedChapter, setSelectedChapter]);
 
   useEffect(() => {
     const handleLoadFirstChapter = (e: Event) => {
@@ -195,7 +177,7 @@ export const Navigator = ({
           const link = links[0];
           const { chapter, isPaid } = getParamsInsideLoadContentOuterHtml(link)!;
           if (_e.detail.book && chapter.startsWith(_e.detail.book)) {
-            setSelectedChapter?.(chapter, isPaid);
+            setSelectedChapter?.(_e.detail.book as SourceType, chapter, isPaid);
             foundChapter = true;
           }
         }
@@ -210,7 +192,7 @@ export const Navigator = ({
               const link = links[0];
               const { chapter, isPaid } = getParamsInsideLoadContentOuterHtml(link)!;
               if (_e.detail.book && chapter.startsWith(_e.detail.book)) {
-                setSelectedChapter?.(chapter, isPaid);
+                setSelectedChapter?.(_e.detail.book as SourceType, chapter, isPaid);
               }
             }
           }
