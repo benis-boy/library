@@ -34,7 +34,7 @@ function HandleBook {
         Rename-Item -Path $_.FullName -NewName $newName -Force
     }
 }
-# HandleBook -bookId "PSSJ"
+HandleBook -bookId "PSSJ"
 # HandleBook -bookId "WtDR"
 # HandleBook -bookId "SoWB"
 

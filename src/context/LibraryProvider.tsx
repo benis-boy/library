@@ -30,8 +30,6 @@ export const LibraryProvider = ({ children }: { children: ReactNode }) => {
       ? localStorage.getItem(`IS_ENCRYPTED_${book}_${tryLoadOldChapter}`)! === 'true'
       : false;
 
-    console.log('[setSelectedBook]', { book, loadChapterToo, tryLoadOldChapter, isEncrypted });
-
     if (isEncrypted && !pContext?.isLoggedIn && loadChapterToo) {
       setOtherPageInfoType('not_logged_in');
       return;
@@ -42,7 +40,6 @@ export const LibraryProvider = ({ children }: { children: ReactNode }) => {
     }
 
     if (tryLoadOldChapter && loadChapterToo) {
-      console.log('[setSelectedBook] Calling setSelectedChapter with', book, tryLoadOldChapter, isEncrypted);
       setSelectedChapter(book, tryLoadOldChapter, isEncrypted);
     } else if (loadChapterToo) {
       const event = new CustomEvent('loadFirstChapter', { detail: { book } });
@@ -51,7 +48,6 @@ export const LibraryProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const setSelectedChapter = async (book: SourceType, chapter: string, secured: boolean) => {
-    console.log('[setSelectedChapter] Called with', { book, chapter, secured });
     setLibraryData((old) => ({ ...old, selectedBook: book, selectedChapter: chapter, isSecured: secured }));
     localStorage.setItem(book + '_SELECTED_CHAPTER', chapter);
     localStorage.setItem(`IS_ENCRYPTED_${book}_${chapter}`, String(secured));
