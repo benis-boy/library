@@ -1,21 +1,20 @@
 # Adding a New Book
 
-This guide documents the steps to add a new book to the library, based on adding "Saint of Wrath - Birmingham" (SoWB).
+This guide documents the current process for adding a new book to the library with the modular content pipeline.
 
 ## Required Files and Changes
 
-### 1. Source Files
+### 1. Source Files (human-provided)
 
-Create these files in the repository root - must be set by the human:
+Create these files in the repository root:
 
-- `book-data/{BookId}_export.md` - Source markdown content
-- `deployment/{BookId}_secret.txt` - Encryption password (empty for no encryption)
-- `public\assets\{BookId}_cover.jpg` - Cover image
-- `deployment\{BookId}_secret.txt` - Secret
+- `book-data/{BookId}_export.md` - source markdown content
+- `deployment/{BookId}_secret.txt` - encryption password file (required for `encryptExport.py` map)
+- `public/assets/{BookId}_cover.jpg` - cover image (or matching format used in book data)
 
-### 2. Book Data (`src/basicBookData.json`)
+### 2. Book Metadata (`src/basicBookData.json`)
 
-Add a new entry:
+Add a new book entry:
 
 ```json
 {
@@ -29,43 +28,28 @@ Add a new entry:
 }
 ```
 
-### 3. Dashboard Component (`src/components/homepage.tsx`)
+Note: `wordCountData` and `lastUpdate` are updated by the pipeline (`update_wordcount.py`).
 
-Import and add the new book tile:
+### 3. Dashboard Wiring (`src/components/homepage.tsx`)
 
-```tsx
-import SoWBBookDashboardTile from './dashboardTiles/SoWBBookDashboardTile';
-
-// In the component:
-<SoWBBookDashboardTile smallView={smallView} />;
-```
-
-Create a new dashboard tile component in `src/components/dashboardTiles/` following the pattern of existing tiles (e.g., `PSSJBookDashboardTile.tsx`).
+Import and render the new dashboard tile component.
 
 ### 4. Source Types (`src/constants.tsx`)
 
-Update the type and array:
+Update both type and list:
 
 ```tsx
 export type SourceType = 'PSSJ' | 'WtDR' | 'SoWB';
 export const SourceTypes: SourceType[] = ['PSSJ', 'WtDR', 'SoWB'];
 ```
 
-### 5. Patreon Context (`src/context/PatreonProvider.tsx`)
+### 5. Patreon Frontend Defaults (`src/context/PatreonProvider.tsx`)
 
-Add the new book to encryption state:
+Add the new key to `encryptionPasswordV2` initial state.
 
-```tsx
-const [encryptionPasswordV2, setEncryptionPasswordV2] = useState<Record<SourceType, string>>({
-  PSSJ: 'unused',
-  WtDR: 'unset',
-  SoWB: 'not-set',
-});
-```
+### 6. Encryption Secret Mapping (`deployment/encryptExport.py`)
 
-### 6. Encryption Config (`deployment/encryptExport.py`)
-
-Add to `book_id_to_secret_path`:
+Add the new book to `book_id_to_secret_path`:
 
 ```python
 book_id_to_secret_path = {
@@ -75,62 +59,69 @@ book_id_to_secret_path = {
 }
 ```
 
-### 7. Encryption Settings (`book-data/encrypted_files.md`)
+### 7. Encryption Rules (`book-data/encrypted_files.md`)
 
-If the book has encrypted content, then the human handles the configuration for it.
+If the new book contains secured chapters, add folder/file rules and exceptions.
+
+Rule parsing is shared by modular scripts via `deployment/encryption_rules.py`.
 
 ### 8. Netlify Function (`netlify/functions/patreon-oauth/patreon-oauth.js`)
 
-Add environment variable reading and encryption password:
+If the new book can be supporter-only, wire env var + returned key:
 
-```javascript
-const sowbSecret = process.env.SOWB_SECRET_PASSWORD;
+- add `process.env.<BOOK>_SECRET_PASSWORD`
+- add key to `encryption_passwordv2`
+- assign real value for supporters
 
-const encryption_passwordv2 = {
-  WtDR: 'NOT_ALLOWED',
-  SoWB: 'NOT_ALLOWED',
-};
+Also set the env var in Netlify project settings.
 
-// In the supportsMe check:
-if (filteredMembershipData.supportsMe) {
-  encryption_passwordv2.WtDR = wtdrSecret;
-  encryption_passwordv2.SoWB = sowbSecret;
-}
-```
+## Pipeline (modular)
 
-Manually set `SOWB_SECRET_PASSWORD` in Netlify environment variables (login with github -> github login with "benis-boy")
-https://app.netlify.com/projects/mellow-kitsune-6578b2/configuration/env#environment-variables
+Current `pipeline.ps1` flow per selected `--book`:
 
-### 9. Pipeline (`pipeline.ps1`)
+1. `deployment/create_htmls.py`
+2. `deployment/generate_metadata.py`
+3. `deployment/update_navigation.py`
+4. `deployment/update_wordcount.py`
+5. `deployment/encryptExport.py`
+6. Copy generated outputs into `public/`
 
-Enable the book processing:
+Generated artifacts include:
 
-```powershell
-HandleBook -bookId "SoWB"
-```
+- `public/book-data/{BookId}/...`
+- `public/navigation-data/{BookId}_navigation.html`
+- `public/navigation-data/{BookId}_chapters.json`
 
-Add navigation placeholder fix if needed:
-
-```powershell
-ItemPlaceholder -bookId "SoWB"
-```
-
-## Cover Assets
-
-Place cover images in `public/assets/`:
-
-- Front cover: `public/assets/{BookId}_cover.jpg`
-- Back cover: `public/assets/{BookId}_cover_back.png` (optional)
+`{BookId}_chapters.json` is required by runtime reader logic.
 
 ## Running the Pipeline
 
+Regenerate content for selected books only:
+
 ```powershell
-.\pipeline.ps1
+.\pipeline.ps1 --book SoWB
 ```
 
-The pipeline will:
+Multiple books:
 
-1. Process and encrypt book content
-2. Commit and push to GitHub
-3. Update Netlify config if needed
-4. Deploy to GitHub Pages
+```powershell
+.\pipeline.ps1 --book PSSJ --book WtDR --book SoWB
+```
+
+Publish (commit/push/deploy) after regeneration:
+
+```powershell
+.\pipeline.ps1 --book SoWB --commit
+```
+
+No `--book` arguments means no content regeneration (intentional for no-book-change runs).
+
+## Validation Checklist
+
+After adding a book, verify:
+
+- `public/navigation-data/{BookId}_chapters.json` exists and is non-empty
+- `public/navigation-data/{BookId}_navigation.html` exists
+- `public/book-data/{BookId}/` has generated chapter HTML files
+- app can open `#/reader/{BookId}` and load first/next chapter correctly
+- secured chapter access rules behave as expected (login/supporter gating)
