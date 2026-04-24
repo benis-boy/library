@@ -8,89 +8,14 @@ from cryptography.hazmat.primitives import hashes
 import base64
 import sys
 
+from encryption_rules import is_encrypted_file, parse_encrypted_md
+
 
 book_id_to_secret_path = {
     "PSSJ": "secret.txt",
     "WtDR": "WtDR_secret.txt",
     "SoWB": "SoWB_secret.txt"
 }
-
-
-def normalize_paths(paths: list[str]):
-    """Normalize a list of paths."""
-    return [os.path.join("book-data", os.path.normpath(path)) if not path.startswith("book-data") else os.path.normpath(path) for path in paths]
-
-
-def parse_encrypted_md(encryption_base):
-    """Parse the encrypted.md content and return normalized paths for encrypted folders, files, and exceptions."""
-    encrypted_folders = []
-    encrypted_files = []
-    exceptions = {}
-
-    with open(encryption_base, 'r') as f:
-        lines = f.readlines()
-
-    section = None
-    current_folder = None
-
-    for line in lines:
-        line = line.strip()
-
-        if line.startswith("## Encrypted Folders"):
-            section = 'folders'
-        elif line.startswith("## Encrypted Files"):
-            section = 'files'
-        elif line.startswith("## Exceptions"):
-            section = 'exceptions'
-        elif line.startswith("-"):
-            # Process folder/file lines
-            path = line[2:].strip()
-            if section == 'folders':
-                encrypted_folders.append(path)
-            elif section == 'files':
-                encrypted_files.append(path)
-            elif section == 'exceptions' and current_folder:
-                [norm_folder] = normalize_paths([current_folder])
-                exceptions[norm_folder].append(path)
-        elif line.startswith("###"):
-            current_folder = line[4:]
-            [norm_folder] = normalize_paths([current_folder])
-            exceptions[norm_folder] = []
-
-    # Normalize all paths after parsing
-    encrypted_folders = normalize_paths(encrypted_folders)
-    encrypted_files = normalize_paths(encrypted_files)
-
-    # Normalize exception paths within their respective folders
-    for folder in exceptions:
-        exceptions[folder] = normalize_paths(exceptions[folder])
-
-    return encrypted_folders, encrypted_files, exceptions
-
-
-def is_encrypted_file(relative_path):
-    """Check if a file should be encrypted based on the parsed and normalized data."""
-    # Normalize the input path
-    [relative_path] = normalize_paths([relative_path])
-
-    # Check if file is specifically in the encrypted files list (normalized comparison)
-    if relative_path in encrypted_files:
-        return True
-
-    # Check if file is in any encrypted folder
-    for folder in encrypted_folders:
-        # If the relative path starts with the folder path (as a substring)
-        [norm_folder] = normalize_paths([folder])
-        if relative_path.startswith(norm_folder):
-            # Check if this file is in the exception list for this folder
-            exception_list = exceptions.get(norm_folder, [])
-            if relative_path not in exception_list:
-                return True
-
-    # If not encrypted
-    return False
-
-
 def copy_folder(src_folder):
     dst_folder = f"{src_folder}_raw"
     # If the destination folder exists, delete it
@@ -143,7 +68,7 @@ def encrypt_folder(src_folder, password):
     for root, _, files in os.walk(src_folder):
         for file in files:
             file_path = os.path.join(root, file)
-            if is_encrypted_file(os.path.normpath(file_path)):
+            if is_encrypted_file(os.path.normpath(file_path), encrypted_folders, encrypted_files, exceptions):
                 encrypt_file(file_path, password)
     print(f"All files in {src_folder} have been encrypted.")
 

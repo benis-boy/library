@@ -3,71 +3,7 @@ import os
 import sys
 from datetime import datetime, timezone
 
-
-def normalize_paths(paths):
-    return [
-        os.path.join('book-data', os.path.normpath(path)) if not path.startswith('book-data') else os.path.normpath(path)
-        for path in paths
-    ]
-
-
-def parse_encrypted_md(encryption_base):
-    encrypted_folders = []
-    encrypted_files = []
-    exceptions = {}
-
-    with open(encryption_base, 'r', encoding='utf-8') as f:
-        lines = f.readlines()
-
-    section = None
-    current_folder = None
-
-    for line in lines:
-        line = line.strip()
-
-        if line.startswith('## Encrypted Folders'):
-            section = 'folders'
-        elif line.startswith('## Encrypted Files'):
-            section = 'files'
-        elif line.startswith('## Exceptions'):
-            section = 'exceptions'
-        elif line.startswith('-'):
-            path = line[2:].strip()
-            if section == 'folders':
-                encrypted_folders.append(path)
-            elif section == 'files':
-                encrypted_files.append(path)
-            elif section == 'exceptions' and current_folder:
-                [norm_folder] = normalize_paths([current_folder])
-                exceptions[norm_folder].append(path)
-        elif line.startswith('###'):
-            current_folder = line[4:]
-            [norm_folder] = normalize_paths([current_folder])
-            exceptions[norm_folder] = []
-
-    encrypted_folders = normalize_paths(encrypted_folders)
-    encrypted_files = normalize_paths(encrypted_files)
-
-    for folder in exceptions:
-        exceptions[folder] = normalize_paths(exceptions[folder])
-
-    return encrypted_folders, encrypted_files, exceptions
-
-
-def is_encrypted_file(relative_path, encrypted_folders, encrypted_files, exceptions):
-    [relative_path] = normalize_paths([relative_path])
-
-    if relative_path in encrypted_files:
-        return True
-
-    for folder in encrypted_folders:
-        [norm_folder] = normalize_paths([folder])
-        if relative_path.startswith(norm_folder):
-            exception_list = exceptions.get(folder, [])
-            if relative_path not in exception_list:
-                return True
-
-    return False
+from encryption_rules import is_encrypted_file, parse_encrypted_md
 
 
 def load_manifest(manifest_path):
@@ -83,7 +19,8 @@ def add_security(manifest, encrypted_folders, encrypted_files, exceptions):
             chapter['isSecured'] = False
             continue
 
-        chapter['isSecured'] = is_encrypted_file(source_chapter, encrypted_folders, encrypted_files, exceptions)
+        chapter['isSecured'] = is_encrypted_file(
+            source_chapter, encrypted_folders, encrypted_files, exceptions)
 
 
 def to_output_payload(manifest):
@@ -101,7 +38,6 @@ def to_output_payload(manifest):
 
     return {
         'bookId': manifest.get('bookId'),
-        'generatedAt': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
         'chapters': output_chapters,
     }
 
@@ -136,7 +72,8 @@ if __name__ == '__main__':
         print('Manifest bookId mismatch', manifest.get('bookId'), book_id)
         raise SystemExit(1)
 
-    encrypted_folders, encrypted_files, exceptions = parse_encrypted_md(encryption_base_data)
+    encrypted_folders, encrypted_files, exceptions = parse_encrypted_md(
+        encryption_base_data)
     add_security(manifest, encrypted_folders, encrypted_files, exceptions)
     output_payload = to_output_payload(manifest)
     write_json(output_path, output_payload)

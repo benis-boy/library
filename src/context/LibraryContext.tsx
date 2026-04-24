@@ -20,7 +20,6 @@ export type ReaderRouteInfo = {
 
 type ChapterMetadataPayload = {
   bookId: SourceType;
-  generatedAt?: string;
   chapters: ChapterNavigationEntry[];
 };
 
