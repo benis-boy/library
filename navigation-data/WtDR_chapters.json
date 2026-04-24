@@ -1,0 +1,84 @@
+{
+  "bookId": "WtDR",
+  "generatedAt": "2026-04-24T16:16:07.564356Z",
+  "chapters": [
+    {
+      "chapter": "WtDR/Data/01_Bloody Mary's Mansion.html",
+      "title": "01 Bloody Mary's Mansion",
+      "isSecured": false,
+      "volume": "Data"
+    },
+    {
+      "chapter": "WtDR/Data/02_The Terrible Terror Of Albury.html",
+      "title": "02 The Terrible Terror Of Albury",
+      "isSecured": false,
+      "volume": "Data"
+    },
+    {
+      "chapter": "WtDR/Data/03_So Deadly And Dastardly.html",
+      "title": "03 So Deadly And Dastardly",
+      "isSecured": false,
+      "volume": "Data"
+    },
+    {
+      "chapter": "WtDR/Data/04_Albury's Haunted House.html",
+      "title": "04 Albury's Haunted House",
+      "isSecured": true,
+      "volume": "Data"
+    },
+    {
+      "chapter": "WtDR/Data/05_The Basement Beckons.html",
+      "title": "05 The Basement Beckons",
+      "isSecured": true,
+      "volume": "Data"
+    },
+    {
+      "chapter": "WtDR/Data/06_The Wicked Witch Lives.html",
+      "title": "06 The Wicked Witch Lives",
+      "isSecured": true,
+      "volume": "Data"
+    },
+    {
+      "chapter": "WtDR/Data/07_Marvelous Mysterious Magics.html",
+      "title": "07 Marvelous Mysterious Magics",
+      "isSecured": true,
+      "volume": "Data"
+    },
+    {
+      "chapter": "WtDR/Data/08_Odyssey Of The Lavish Lavatory.html",
+      "title": "08 Odyssey Of The Lavish Lavatory",
+      "isSecured": true,
+      "volume": "Data"
+    },
+    {
+      "chapter": "WtDR/Data/09_Home Sweet Home.html",
+      "title": "09 Home Sweet Home",
+      "isSecured": true,
+      "volume": "Data"
+    },
+    {
+      "chapter": "WtDR/Data/10_Magical Mights And Gripping Gripes.html",
+      "title": "10 Magical Mights And Gripping Gripes",
+      "isSecured": true,
+      "volume": "Data"
+    },
+    {
+      "chapter": "WtDR/Data/11_Hell.html",
+      "title": "11 Hell",
+      "isSecured": true,
+      "volume": "Data"
+    },
+    {
+      "chapter": "WtDR/Data/12_Resolute Resolutions.html",
+      "title": "12 Resolute Resolutions",
+      "isSecured": true,
+      "volume": "Data"
+    },
+    {
+      "chapter": "WtDR/Data/13_Merry Mary's Marriage.html",
+      "title": "13 Merry Mary's Marriage",
+      "isSecured": true,
+      "volume": "Data"
+    }
+  ]
+}
