@@ -45,7 +45,7 @@ function ItemPlaceholder {
 
 function ShowUsage {
     Write-Host "Usage:" -ForegroundColor Cyan
-    Write-Host "  .\pipeline.ps1 --book <BookId> [--book <BookId> ...] [--commit]"
+    Write-Host "  .\pipeline.ps1 [--book <BookId> ...] [--commit]"
     Write-Host ""
     Write-Host "Examples:" -ForegroundColor Cyan
     Write-Host "  .\pipeline.ps1 --book PSSJ"
@@ -135,7 +135,6 @@ else {
 
 # Fetch latest changes from remote
 git fetch origin netlify
-git checkout netlify -- netlify.toml .netlify/ netlify/ 2>$null
 $branchExists = git rev-parse --verify origin/netlify 2>$null
 if (-not $branchExists) {
     Write-Host "Remote branch 'netlify' does not exist. Exiting..." -ForegroundColor Yellow
@@ -143,7 +142,7 @@ if (-not $branchExists) {
 }
 
 # Check if there are differences - update if needed
-git diff --quiet HEAD origin/netlify -- netlify.toml .netlify/ netlify/
+git diff --quiet origin/netlify -- netlify.toml .netlify/ netlify/
 if ($LASTEXITCODE -eq 0) {
     Write-Host "No Netlify update required." -ForegroundColor Green
 }
