@@ -6,10 +6,36 @@ import { ConfigurationContext } from '../context/ConfigurationContext';
 import {
   getAccessDeniedRoute,
   getReaderRoute,
-  getStoredChapterSelection,
   LibraryContext,
+  normalizeChapterPath,
   normalizeRouteBookId,
 } from '../context/LibraryContext';
+
+const parseLoadContentParams = (raw: string | null): { chapter: string; isPaid: boolean } | undefined => {
+  if (!raw) {
+    return undefined;
+  }
+
+  const match = raw.match(/loadContent\('((?:\\'|[^'])*)'(?:,\s*(true|false))?\)/);
+  if (!match) {
+    return undefined;
+  }
+
+  const chapterCandidate = match[1].replace(/\\'/g, "'").replace(/\\\\/g, '\\');
+  const chapter = normalizeChapterPath(chapterCandidate);
+  if (!chapter) {
+    return undefined;
+  }
+
+  return {
+    chapter,
+    isPaid: match[2] === 'true',
+  };
+};
+
+const getParamsInsideLoadContentOuterHtml = (link: HTMLAnchorElement) => {
+  return parseLoadContentParams(link.getAttribute('onclick'));
+};
 
 export const Navigator = ({
   open,
@@ -35,26 +61,6 @@ export const Navigator = ({
     setSelectedChapter,
   } = lContext || {};
   const selectedBookOrDefault: SourceType = selectedBook || normalizeRouteBookId(window.location.hash.split('/')[2]) || 'PSSJ';
-
-  const getParamsInsideLoadContentOuterHtml = (link: HTMLAnchorElement) => {
-    const match = link.outerHTML.match(/loadContent\(([^)]+)\)/);
-    if (match) {
-      const params = match[1] // Extract the inside of the parentheses
-        .split("', ")
-        .map((param) => {
-          let trimmed = param.trim().replace(/^['"]|['"]$/g, ''); // Remove outer quotes
-          trimmed = trimmed.replace(/\\'/g, "'").replace(/\\\\/g, '\\'); // Fix escaped backslashes and single quotes
-          return trimmed === 'true' ? true : trimmed === 'false' ? false : trimmed;
-        });
-      if (params.length === 1) {
-        params.push(false);
-      }
-
-      const [chapter, isPaid] = params as [string, boolean];
-      return { chapter, isPaid };
-    }
-    return undefined;
-  };
 
   useEffect(() => {
     // Listen for messages from the iframe
@@ -90,11 +96,14 @@ export const Navigator = ({
         if (iframeDocument) {
           // Select all anchor tags in the iframe
           const links = iframeDocument.querySelectorAll('a');
+          const normalizedSelectedChapter = normalizeChapterPath(selectedChapter);
 
           for (let index = 0; index < links.length; index++) {
             const link = links[index];
             link.classList.remove('highlight');
-            if (selectedChapter && getParamsInsideLoadContentOuterHtml(link)?.chapter.includes(selectedChapter)) {
+            const chapterParams = getParamsInsideLoadContentOuterHtml(link);
+            const normalizedChapter = normalizeChapterPath(chapterParams?.chapter);
+            if (normalizedSelectedChapter && normalizedChapter === normalizedSelectedChapter) {
               link.classList.add('highlight');
               link.scrollIntoView({
                 behavior: 'smooth',
@@ -118,139 +127,7 @@ export const Navigator = ({
       }
     }
     setTimeout(update, 300);
-  }, [selectedChapter, selectedBookOrDefault, iframeRef.current?.srcdoc, hasTouch]);
-  useEffect(() => {
-    // Highlight selected chapter after iframe loads
-    function update() {
-      if (iframeRef.current) {
-        const iframeDocument = iframeRef.current.contentDocument;
-        if (iframeDocument) {
-          // Select all anchor tags in the iframe
-          const links = iframeDocument.querySelectorAll('a');
-
-          for (let index = 0; index < links.length; index++) {
-            const link = links[index];
-            link.classList.remove('highlight');
-            if (selectedChapter && getParamsInsideLoadContentOuterHtml(link)?.chapter.includes(selectedChapter)) {
-              link.classList.add('highlight');
-              link.scrollIntoView({
-                behavior: 'smooth',
-                block: 'center',
-              });
-            }
-          }
-
-          if (links.length === 0) {
-            setTimeout(update, 100);
-          }
-        }
-      }
-    }
-    setTimeout(update);
-  }, [selectedChapter]);
-
-  useEffect(() => {
-    const handleLoadNextChapter = () => {
-      if (iframeRef.current) {
-        const iframeDocument = iframeRef.current.contentDocument;
-        const currentChapter = lContext?.libraryData.selectedChapter;
-        if (iframeDocument) {
-          const links = iframeDocument.querySelectorAll('a');
-
-          for (let index = 0; index < links.length; index++) {
-            const link = links[index];
-            if (currentChapter && getParamsInsideLoadContentOuterHtml(link)?.chapter.includes(currentChapter)) {
-              if (index + 1 < links.length) {
-                const nextLink = links[index + 1];
-                const { chapter, isPaid } = getParamsInsideLoadContentOuterHtml(nextLink)!;
-                void setSelectedChapter?.(selectedBookOrDefault, chapter, isPaid).then((result) => {
-                  if (result && !result.ok) {
-                    navigate(getAccessDeniedRoute(result.reason));
-                  } else {
-                    navigate(getReaderRoute(selectedBookOrDefault, chapter));
-                  }
-                });
-              } else {
-                navigate('/reader/end');
-              }
-              break;
-            }
-          }
-        }
-      }
-    };
-
-    window.addEventListener('loadNextChapter', handleLoadNextChapter);
-    return () => {
-      window.removeEventListener('loadNextChapter', handleLoadNextChapter);
-    };
-  }, [navigate, selectedBookOrDefault, lContext?.libraryData.selectedChapter, setSelectedChapter]);
-
-  useEffect(() => {
-    const handleLoadFirstChapter = (e: Event) => {
-      const _e = e as CustomEvent<{ book: SourceType }>;
-      const iframeDocument = iframeRef.current!.contentDocument;
-      let foundChapter = false;
-      if (iframeDocument) {
-        const links = iframeDocument.querySelectorAll('a');
-
-        if (links.length > 0) {
-          const link = links[0];
-          const { chapter, isPaid } = getParamsInsideLoadContentOuterHtml(link)!;
-          if (_e.detail.book && chapter.startsWith(_e.detail.book)) {
-            void setSelectedChapter?.(_e.detail.book as SourceType, chapter, isPaid).then((result) => {
-              if (result && !result.ok) {
-                navigate(getAccessDeniedRoute(result.reason));
-              } else {
-                navigate(getReaderRoute(_e.detail.book as SourceType, chapter));
-              }
-            });
-            foundChapter = true;
-          }
-        }
-      }
-      if (iframeRef.current && !foundChapter) {
-        iframeRef.current.onload = () => {
-          const iframeDocument = iframeRef.current!.contentDocument;
-          if (iframeDocument) {
-            const links = iframeDocument.querySelectorAll('a');
-
-            if (links.length > 0) {
-              const link = links[0];
-              const { chapter, isPaid } = getParamsInsideLoadContentOuterHtml(link)!;
-              if (_e.detail.book && chapter.startsWith(_e.detail.book)) {
-                void setSelectedChapter?.(_e.detail.book as SourceType, chapter, isPaid).then((result) => {
-                  if (result && !result.ok) {
-                    navigate(getAccessDeniedRoute(result.reason));
-                  } else {
-                    navigate(getReaderRoute(_e.detail.book as SourceType, chapter));
-                  }
-                });
-              }
-            }
-          }
-        };
-      }
-
-      if (!foundChapter && _e.detail.book) {
-        const stored = getStoredChapterSelection(_e.detail.book as SourceType);
-        if (stored) {
-          void setSelectedChapter?.(_e.detail.book as SourceType, stored).then((result) => {
-            if (result && !result.ok) {
-              navigate(getAccessDeniedRoute(result.reason));
-            } else {
-              navigate(getReaderRoute(_e.detail.book as SourceType, stored));
-            }
-          });
-        }
-      }
-    };
-
-    window.addEventListener('loadFirstChapter', handleLoadFirstChapter);
-    return () => {
-      window.removeEventListener('loadFirstChapter', handleLoadFirstChapter);
-    };
-  }, [navigate, selectedBookOrDefault, selectedChapter, setSelectedChapter]);
+  }, [selectedChapter, selectedBookOrDefault, hasTouch]);
 
   useEffect(() => {
     if (iframeRef.current) {

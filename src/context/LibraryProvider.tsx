@@ -5,12 +5,15 @@ import {
   BookSelectionResult,
   ChapterSelectionResult,
   clearLegacyChapterEncryptionKeys,
+  getChapterSecurityForBook,
+  getFirstChapterForBook,
   getStoredChapterSelection,
   getStoredSelectedBook,
   isLibrarySelectionStorageKey,
   LibraryContext,
   LibraryContextType,
   LibraryData,
+  normalizeChapterPath,
   setStoredChapterSelection,
   setStoredSelectedBook,
   useLoadContent,
@@ -37,18 +40,6 @@ const buildInitialLibraryData = (): LibraryData => {
     isSecured,
     content: '',
   };
-};
-
-const emitLoadFirstChapterEvent = (book: SourceType) => {
-  const event = new CustomEvent('loadFirstChapter', { detail: { book } });
-  window.dispatchEvent(event);
-};
-
-const emitLoadedChapterEvent = () => {
-  const loadedEvent = new CustomEvent('loadedNewChapter', {
-    detail: { message: 'Next chapter loaded' },
-  });
-  window.dispatchEvent(loadedEvent);
 };
 
 export const LibraryProvider = ({ children }: { children: ReactNode }) => {
@@ -109,22 +100,9 @@ export const LibraryProvider = ({ children }: { children: ReactNode }) => {
 
   const loadContent = useLoadContent(handleLoadedContent);
 
-  const resolveChapterSecuredFromNavigator = useCallback(async (book: SourceType, chapter: string) => {
+  const resolveChapterSecuredFromMetadata = useCallback(async (book: SourceType, chapter: string) => {
     try {
-      const response = await fetch(`navigation-data/${book}_navigation.html`);
-      if (!response.ok) {
-        return undefined;
-      }
-
-      const html = await response.text();
-      const escapedChapter = chapter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const chapterRegex = new RegExp(`loadContent\\('${escapedChapter}'(?:,\\s*(true|false))?\\)`);
-      const match = html.match(chapterRegex);
-      if (!match) {
-        return undefined;
-      }
-
-      return match[1] === 'true';
+      return await getChapterSecurityForBook(book, chapter);
     } catch {
       return undefined;
     }
@@ -150,45 +128,50 @@ export const LibraryProvider = ({ children }: { children: ReactNode }) => {
   );
 
   const setSelection = useCallback((book: SourceType, chapter: string | undefined, isSecured: boolean | undefined) => {
+    const normalizedChapter = normalizeChapterPath(chapter);
     setLibraryData((old) => {
-      if (old.selectedBook === book && old.selectedChapter === chapter && old.isSecured === isSecured) {
+      if (old.selectedBook === book && old.selectedChapter === normalizedChapter && old.isSecured === isSecured) {
         return old;
       }
 
       return {
         ...old,
         selectedBook: book,
-        selectedChapter: chapter,
+        selectedChapter: normalizedChapter,
         isSecured,
       };
     });
 
     setStoredSelectedBook(book);
-    if (chapter) {
-      setStoredChapterSelection(book, chapter);
+    if (normalizedChapter) {
+      setStoredChapterSelection(book, normalizedChapter);
     }
   }, []);
 
   const setSelectedChapter = useCallback(
     async (book: SourceType, chapter: string, secured?: boolean): Promise<ChapterSelectionResult> => {
+      const normalizedChapter = normalizeChapterPath(chapter);
+      if (!normalizedChapter) {
+        return { ok: true };
+      }
+
       let effectiveSecured = secured;
       if (typeof effectiveSecured !== 'boolean') {
-        const resolved = await resolveChapterSecuredFromNavigator(book, chapter);
+        const resolved = await resolveChapterSecuredFromMetadata(book, normalizedChapter);
         effectiveSecured = resolved === true;
       }
 
-      setSelection(book, chapter, effectiveSecured);
+      setSelection(book, normalizedChapter, effectiveSecured);
 
       const deniedReason = getAccessDeniedReason(effectiveSecured);
       if (deniedReason) {
         return { ok: false, reason: deniedReason };
       }
 
-      await loadContent(book, chapter, effectiveSecured);
-      emitLoadedChapterEvent();
+      await loadContent(book, normalizedChapter, effectiveSecured);
       return { ok: true };
     },
-    [getAccessDeniedReason, loadContent, resolveChapterSecuredFromNavigator, setSelection]
+    [getAccessDeniedReason, loadContent, resolveChapterSecuredFromMetadata, setSelection]
   );
 
   const setSelectedBook = useCallback(
@@ -201,8 +184,17 @@ export const LibraryProvider = ({ children }: { children: ReactNode }) => {
       }
 
       if (!chapterSelection) {
-        emitLoadFirstChapterEvent(book);
-        return { ok: true, mode: 'requested_first_chapter' };
+        const firstChapter = await getFirstChapterForBook(book).catch(() => undefined);
+        if (!firstChapter) {
+          return { ok: true, mode: 'selected_only' };
+        }
+
+        const chapterResult = await setSelectedChapter(book, firstChapter.chapter, firstChapter.isSecured);
+        if (!chapterResult.ok) {
+          return chapterResult;
+        }
+
+        return { ok: true, mode: 'loaded_chapter' };
       }
 
       const chapterResult = await setSelectedChapter(book, chapterSelection);

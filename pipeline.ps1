@@ -2,11 +2,29 @@ function HandleBook {
     param (
         [string]$bookId
     )
+
+    function InvokePythonStep {
+        param(
+            [string]$description,
+            [string[]]$arguments
+        )
+
+        Write-Host $description -ForegroundColor Cyan
+        & python @arguments
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "Step failed: $description" -ForegroundColor Red
+            exit 1
+        }
+    }
+
     # Cleanup old folders
     $pathsToRemove = @(
         "book-data\$bookId",
         "book-data\$bookId`_raw",
-        "public\book-data\$bookId"
+        "book-data\$bookId`_chapters_manifest.json",
+        "book-data\$bookId`_chapters.json",
+        "public\book-data\$bookId",
+        "public\navigation-data\$bookId`_chapters.json"
     )
 
     foreach ($path in $pathsToRemove) {
@@ -15,9 +33,44 @@ function HandleBook {
         }
     }
     
-    python .\deployment\modifyExport.py $bookId "book-data\$bookId`_export.md" "book-data\encrypted_files.md" "src\basicBookData.json"
-    python .\deployment\encryptExport.py $bookId "book-data\$bookId" "book-data\encrypted_files.md"
+    InvokePythonStep -description "Creating HTML artifacts for $bookId" -arguments @(
+        ".\deployment\create_htmls.py",
+        $bookId,
+        "book-data\$bookId`_export.md",
+        "book-data\$bookId`_chapters_manifest.json"
+    )
+
+    InvokePythonStep -description "Generating chapter metadata for $bookId" -arguments @(
+        ".\deployment\generate_metadata.py",
+        $bookId,
+        "book-data\$bookId`_chapters_manifest.json",
+        "book-data\encrypted_files.md",
+        "book-data\$bookId`_chapters.json"
+    )
+
+    InvokePythonStep -description "Updating navigation html for $bookId" -arguments @(
+        ".\deployment\update_navigation.py",
+        $bookId,
+        "book-data\$bookId`_chapters.json",
+        "book-data\$bookId`_navigation.html"
+    )
+
+    InvokePythonStep -description "Updating wordcount for $bookId" -arguments @(
+        ".\deployment\update_wordcount.py",
+        $bookId,
+        "book-data\$bookId",
+        "src\basicBookData.json"
+    )
+
+    InvokePythonStep -description "Encrypting content for $bookId" -arguments @(
+        ".\deployment\encryptExport.py",
+        $bookId,
+        "book-data\$bookId",
+        "book-data\encrypted_files.md"
+    )
+
     Copy-Item -Path "book-data\$bookId`_navigation.html" -Destination "public\navigation-data\$bookId`_navigation.html" -Force
+    Copy-Item -Path "book-data\$bookId`_chapters.json" -Destination "public\navigation-data\$bookId`_chapters.json" -Force
     Copy-Item -Path "book-data\$bookId" -Destination "public\book-data" -Recurse -Force
 
     # Remove .webnovel.html files from destination

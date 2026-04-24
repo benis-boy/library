@@ -1,7 +1,7 @@
 import { useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import basicBookData from '../../basicBookData';
-import { getAccessDeniedRoute, getReaderRoute, LibraryContext } from '../../context/LibraryContext';
+import { getAccessDeniedRoute, getReaderRoute, getStoredChapterSelection, LibraryContext } from '../../context/LibraryContext';
 import { useBookSelection } from './abstracts';
 
 const SoWBBookDashboardTile = ({ smallView }: { smallView: boolean }) => {
@@ -53,7 +53,8 @@ const SoWBBookDashboardTile = ({ smallView }: { smallView: boolean }) => {
                       return;
                     }
 
-                    navigate(getReaderRoute(bbd.id));
+                    const storedChapter = getStoredChapterSelection(bbd.id);
+                    navigate(getReaderRoute(bbd.id, storedChapter));
                   }}
                   className="px-4 my-2 py-1 bg-[#872341] hover:scale-105 text-white font-semibold rounded-lg shadow-md transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-opacity-50"
                 >

@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ConfigurationContext } from '../context/ConfigurationContext';
 import {
   getAccessDeniedRoute,
+  getNextChapterForBook,
   getReaderRoute,
   getStoredChapterSelection,
   LibraryContext,
@@ -97,20 +98,13 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
   }, [content, iframeRef]);
 
   useEffect(() => {
-    const handleLoadedNewChapter = () => {
-      if (scrollerRef.current) {
-        scrollerRef.current.scrollTo({
-          top: 0,
-          behavior: 'smooth',
-        });
-      }
-    };
-
-    window.addEventListener('loadedNewChapter', handleLoadedNewChapter);
-    return () => {
-      window.removeEventListener('loadedNewChapter', handleLoadedNewChapter);
-    };
-  }, [scrollerRef]);
+    if (scrollerRef.current) {
+      scrollerRef.current.scrollTo({
+        top: 0,
+        behavior: 'smooth',
+      });
+    }
+  }, [params.bookId, params.chapter, scrollerRef]);
 
   useEffect(() => {
     if (iframeRef.current) {
@@ -136,10 +130,33 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
         <button
           className="px-6 py-2 bg-[#872341] hover:scale-105 text-white font-semibold rounded-lg shadow-md transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-opacity-50"
           style={{ maxWidth: '200px' }}
-          onClick={(e) => {
+          onClick={async (e) => {
             e.currentTarget.blur();
-            const event = new CustomEvent('loadNextChapter');
-            window.dispatchEvent(event);
+            if (!setSelectedChapter) {
+              return;
+            }
+
+            const routeBook = normalizeRouteBookId(params.bookId);
+            const routeInfo = parseReaderRoute(params.bookId, params.chapter);
+            const book = routeInfo?.book || routeBook;
+            const currentChapter = routeInfo?.chapter || (book ? getStoredChapterSelection(book) : undefined);
+            if (!book || !currentChapter) {
+              return;
+            }
+
+            const nextChapter = await getNextChapterForBook(book, currentChapter);
+            if (!nextChapter) {
+              navigate('/reader/end');
+              return;
+            }
+
+            const result = await setSelectedChapter(book, nextChapter.chapter, nextChapter.isSecured);
+            if (!result.ok) {
+              navigate(getAccessDeniedRoute(result.reason));
+              return;
+            }
+
+            navigate(getReaderRoute(book, nextChapter.chapter));
           }}
         >
           Next Chapter
