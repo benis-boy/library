@@ -34,11 +34,6 @@ function HandleBook {
         Rename-Item -Path $_.FullName -NewName $newName -Force
     }
 }
-HandleBook -bookId "PSSJ"
-# HandleBook -bookId "WtDR"
-# HandleBook -bookId "SoWB"
-
-# exit 0
 
 function ItemPlaceholder {
     param (
@@ -47,10 +42,73 @@ function ItemPlaceholder {
     $filePath = "public\navigation-data\$bookId`_navigation.html"
     (Get-Content $filePath) -replace '<li>Data', '<li>' | Set-Content $filePath
 }
-# ItemPlaceholder -bookId "WtDR"
-# ItemPlaceholder -bookId "SoWB"
 
-# exit 0
+function ShowUsage {
+    Write-Host "Usage:" -ForegroundColor Cyan
+    Write-Host "  .\pipeline.ps1 --book <BookId> [--book <BookId> ...] [--commit]"
+    Write-Host ""
+    Write-Host "Examples:" -ForegroundColor Cyan
+    Write-Host "  .\pipeline.ps1 --book PSSJ"
+    Write-Host "  .\pipeline.ps1 --book PSSJ --book WtDR"
+    Write-Host "  .\pipeline.ps1 --book PSSJ --commit"
+}
+
+function ParseBookIds {
+    param(
+        [string]$raw
+    )
+    return @($raw -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+}
+
+$bookIds = @()
+$shouldCommit = $false
+$showHelp = $false
+
+for ($i = 0; $i -lt $args.Count; $i++) {
+    $arg = $args[$i]
+    switch ($arg.ToLower()) {
+        '--book' {
+            if ($i + 1 -ge $args.Count) {
+                Write-Host "Missing value after --book" -ForegroundColor Red
+                ShowUsage
+                exit 1
+            }
+            $bookIds += ParseBookIds -raw $args[$i + 1]
+            $i++
+        }
+        '--commit' {
+            $shouldCommit = $true
+        }
+        '--help' {
+            $showHelp = $true
+        }
+        '-h' {
+            $showHelp = $true
+        }
+        default {
+            Write-Host "Unknown argument: $arg" -ForegroundColor Red
+            ShowUsage
+            exit 1
+        }
+    }
+}
+
+if ($showHelp) {
+    ShowUsage
+    exit 0
+}
+
+$bookIds = @($bookIds | Select-Object -Unique)
+
+foreach ($bookId in $bookIds) {
+    HandleBook -bookId $bookId
+    ItemPlaceholder -bookId $bookId
+}
+
+if (-not $shouldCommit) {
+    Write-Host "Done. Skipped git/deploy steps (use --commit to publish)." -ForegroundColor Green
+    exit 0
+}
 
 # Make the git commit
 if (-not (Test-Path .git)) {
@@ -58,8 +116,22 @@ if (-not (Test-Path .git)) {
     exit 1
 }
 git add .
-git commit -m "automated commit"
-git push
+git diff --cached --quiet
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "No staged changes to commit." -ForegroundColor Yellow
+}
+else {
+    git commit -m "automated commit"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Commit failed. Exiting..." -ForegroundColor Red
+        exit 1
+    }
+    git push
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Push failed. Exiting..." -ForegroundColor Red
+        exit 1
+    }
+}
 
 # Fetch latest changes from remote
 git fetch origin netlify

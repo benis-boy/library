@@ -1,95 +1,47 @@
 # AGENTS.md
 
-## Project Overview
+## Scope and entrypoints
+- Main shipped app is the Vite React+TS SPA in `src/` (`src/main.tsx` -> `src/App.tsx`).
+- Runtime content is loaded from `public/book-data/` and `public/navigation-data/`; keep these paths stable.
+- `apps/notes-app/` and `apps/simple-tts/` are side tools and are not part of root build/deploy scripts.
+- Backend/API logic is only the Netlify function at `netlify/functions/patreon-oauth/patreon-oauth.js`.
 
-Personal author homepage/library for "BenisBoy16" featuring book previews (Pokemon fanfic "Solo's Strange Journey", original fiction "Where the Dead Remember", and "Saint of Wrath - Birmingham"), Patreon integration, and support tier management.
+## Commands (root)
+- `npm run dev` - Vite dev server.
+- `npm run build` - `tsc -b && vite build` (typecheck + production bundle).
+- `npm run lint` - ESLint run.
+- `npm run deploy` - publishes `dist/` with `gh-pages` (runs `predeploy` -> `npm run build`).
+- There is no root test script.
 
-## Tech Stack
+## Tooling quirks that matter
+- ESLint source of truth is `eslint.config.js` (flat config, TS files only); `.eslintrc.json` is legacy.
+- Vite base path is `/library/` (`vite.config.ts`); OAuth redirect uses the same URL in both frontend and Netlify function. If URL/base changes, update both:
+  - `src/context/PatreonProvider.tsx`
+  - `netlify/functions/patreon-oauth/patreon-oauth.js`
 
-- React 19 + TypeScript + Vite 6
-- Tailwind CSS v4 (Vite plugin, NOT the traditional PostCSS approach)
-- MUI (Material UI) + Emotion + styled-components
-- ESLint (flat config) + Prettier
-- gh-pages for GitHub Pages deployment
+## Content pipeline (read before running)
+- `pipeline.ps1` is a publishing script, not a normal dev script.
+- It now requires explicit `--book` args (repeatable); each selected book runs both `HandleBook` and `ItemPlaceholder`.
+- `--commit` is required to run any git push / Netlify / deploy steps; without it the script only regenerates content.
+- It deletes and regenerates book artifacts, then runs git/deploy steps automatically (`git add .`, commit, push, possible Netlify update, then `npm run deploy`).
+- Use it only when intentionally publishing book content.
 
-## Key Commands
+## Book data flow
+- Source markdown lives in `book-data/<BookId>_export.md`.
+- `deployment/modifyExport.py` generates chapter HTML + navigation and updates `src/basicBookData.json` word counts/dates.
+- `deployment/encryptExport.py` reads `book-data/encrypted_files.md`, encrypts selected files, and uses secrets in `deployment/secret.txt`, `deployment/WtDR_secret.txt`, `deployment/SoWB_secret.txt`.
+- Generated outputs copied to `public/` are overwritten by pipeline runs; avoid manual edits there unless you also update the generation flow.
 
-```bash
-npm run dev        # Start Vite dev server
-npm run build      # Run tsc -b (typecheck) then vite build
-npm run lint       # ESLint check
-npm run preview    # Preview production build
-npm run deploy     # Build then gh-pages -d dist (GitHub Pages)
-```
+## Netlify and secrets
+- Netlify function currently reads only `NETLIFY_SECRET_PASSWORD` and `WTDR_SECRET_PASSWORD`.
+- `deployment/deploy-netlify.ps1` force-pushes `origin/netlify`; treat it as a deliberate release action.
+- Secret files are gitignored (`secret.txt`, `*_secret.txt`).
 
-## Deployment
-
-- **Base path**: `/library/` (configured in `vite.config.ts`)
-- **GitHub Pages URL**: `benis-boy.github.io/library/`
-- Deploy script runs `npm run build` first via `predeploy`
-
-## Architecture Notes
-
-- **Main app**: Single-page React app in `src/`, entry point `src/main.tsx`
-- **Standalone tools** (not part of main build):
-  - `apps/notes-app/` - vanilla TS note-taking app with localStorage persistence
-  - `apps/simple-tts/` - Python TTS script (requires `pyttsx3`)
-- **Netlify function**: `netlify/functions/patreon-oauth/patreon-oauth.js` handles Patreon OAuth token exchange and membership verification
-
-## Build Configuration
-
-- Vite config uses `tailwindcss/vite` plugin (v4 approach)
-- `tsconfig.app.json` + `tsconfig.node.json` (project references)
-- PostCSS config at `./postcss.config.js` with `@tailwindcss/postcss`
-
-## Environment Variables (Netlify)
-
-- `NETLIFY_SECRET_PASSWORD` - encryption key for patron sessions
-- `WTDR_SECRET_PASSWORD` - unlock code for "Where the Dead Remember" content
-- `SOWB_SECRET_PASSWORD` - unlock code for "Saint of Wrath - Birmingham" content
-
-## ESLint Configuration
-
-Two config files exist: legacy `.eslintrc.json` and flat config `eslint.config.js`. Vite/TypeScript uses the flat config.
-
-## Publishing Pipeline (`pipeline.ps1`)
-
-The `pipeline.ps1` script handles publishing book content. Run it from PowerShell after exporting new chapters.
-
-### Pipeline Flow
-
-1. **Process each book** via `HandleBook` function:
-   - Cleans old folders (`book-data/{bookId}`, `book-data/{bookId}_raw`, `public/book-data/{bookId}`)
-   - Runs `deployment/modifyExport.py` - splits markdown into volumes/chapters, converts to HTML, generates navigation, counts words, updates `src/basicBookData.json`
-   - Runs `deployment/encryptExport.py` - encrypts content files per `book-data/encrypted_files.md`, removes non-HTML files
-   - Copies navigation HTML and book data to `public/`
-   - Removes `.webnovel.html` files and renames `#` to `_` in filenames
-
-2. **Commits and pushes** to GitHub
-
-3. **Updates Netlify** (if netlify.toml/.netlify/netlify/ changed):
-   - Uses a git worktree to isolate and push Netlify config to `origin/netlify` branch
-   - Runs `deployment/deploy-netlify.ps1`
-
-4. **Deploys to GitHub Pages** via `npm run deploy`
-
-### Configuration Files
-
-- `book-data/encrypted_files.md` - defines which folders/files are encrypted
-- `book-data/{bookId}_export.md` - source markdown to publish
-- `deployment/{bookId}_secret.txt` - encryption password
-
-### Book IDs
-
-- `PSSJ` - Pokemon - Solo's Strange Journey
-- `WtDR` - Where the Dead Remember
-- `SoWB` - Saint of Wrath – Birmingham
-
-### Adding a New Book
-
-See [docs/adding-a-new-book.md](docs/adding-a-new-book.md) for a complete step-by-step guide.
-
-## Build Artifact
-
-- Output goes to `dist/` directory
-- Do not edit `dist/` directly (it's gitignored)
+## Adding/changing book IDs
+- Book IDs are centralized in `src/constants.tsx` (`SourceType`, `SourceTypes`).
+- New IDs must stay consistent across at least:
+  - `src/basicBookData.json`
+  - `src/components/homepage.tsx` (dashboard tile wiring)
+  - `src/context/PatreonProvider.tsx` (`encryptionPasswordV2` defaults)
+  - `deployment/encryptExport.py` (`book_id_to_secret_path`)
+- `docs/adding-a-new-book.md` is useful, but verify against current code before following it verbatim.

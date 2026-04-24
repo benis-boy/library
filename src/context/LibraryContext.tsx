@@ -1,67 +1,125 @@
-import { createContext, useContext } from 'react';
-import { SourceType } from '../constants';
+import { createContext, useCallback, useContext } from 'react';
+import { SourceType, SourceTypes } from '../constants';
 import { PatreonContext } from './PatreonContext';
 
+export type LibraryPageType =
+  | false
+  | 'homepage'
+  | 'not_a_supporter'
+  | 'not_logged_in'
+  | 'configuration'
+  | 'end_of_book';
+
+export type LibraryData = {
+  selectedBook: SourceType;
+  selectedChapter: string | undefined;
+  content: string;
+  isSecured: boolean | undefined;
+};
+
 export type LibraryContextType = {
-  libraryData: {
-    selectedBook: SourceType;
-    selectedChapter: string | undefined;
-    content: string;
-  };
+  libraryData: LibraryData;
   setSelectedBook: (book: SourceType, loadChapterToo: boolean) => void;
-  setSelectedChapter: (book: SourceType, chapter: string, secured: boolean) => void;
+  setSelectedChapter: (book: SourceType, chapter: string, secured: boolean) => Promise<void>;
   otherPageInfo: {
-    pageType: false | 'homepage' | 'not_a_supporter' | 'not_logged_in' | 'configuration' | 'end_of_book';
-    showOtherPage: (
-      pageType: false | 'homepage' | 'not_a_supporter' | 'not_logged_in' | 'configuration' | 'end_of_book'
-    ) => void;
+    pageType: LibraryPageType;
+    showOtherPage: (pageType: LibraryPageType) => void;
   };
 };
-export const LibraryContext = createContext<LibraryContextType | undefined>({
-  libraryData: {
-    content: '',
-    selectedBook: 'PSSJ',
-    selectedChapter: '',
-  },
-  setSelectedBook: () => undefined,
-  setSelectedChapter: () => undefined,
-  otherPageInfo: {
-    pageType: 'homepage',
-    showOtherPage: () => undefined,
-  },
-});
+
+export const LIBRARY_SELECTED_BOOK_KEY = 'SELECTED_BOOK';
+export const LIBRARY_SELECTED_CHAPTER_SUFFIX = '_SELECTED_CHAPTER';
+export const LIBRARY_ENCRYPTION_PREFIX = 'IS_ENCRYPTED_';
+
+export const DEFAULT_BOOK: SourceType = 'PSSJ';
+
+const isSourceType = (value: string | null): value is SourceType =>
+  value !== null && SourceTypes.includes(value as SourceType);
+
+export const getSelectedChapterStorageKey = (book: SourceType) => `${book}${LIBRARY_SELECTED_CHAPTER_SUFFIX}`;
+
+export const getChapterEncryptionStorageKey = (book: SourceType, chapter: string) =>
+  `${LIBRARY_ENCRYPTION_PREFIX}${book}_${chapter}`;
+
+export const isLibrarySelectionStorageKey = (key: string) =>
+  key === LIBRARY_SELECTED_BOOK_KEY ||
+  key.endsWith(LIBRARY_SELECTED_CHAPTER_SUFFIX) ||
+  key.startsWith(LIBRARY_ENCRYPTION_PREFIX);
+
+export function getStoredSelectedBook(): SourceType {
+  const storedBook = localStorage.getItem(LIBRARY_SELECTED_BOOK_KEY);
+  if (isSourceType(storedBook)) {
+    return storedBook;
+  }
+
+  localStorage.setItem(LIBRARY_SELECTED_BOOK_KEY, DEFAULT_BOOK);
+  return DEFAULT_BOOK;
+}
+
+export function setStoredSelectedBook(book: SourceType) {
+  localStorage.setItem(LIBRARY_SELECTED_BOOK_KEY, book);
+}
+
+export function getStoredSelectedChapter(book: SourceType): string | undefined {
+  return localStorage.getItem(getSelectedChapterStorageKey(book)) || undefined;
+}
+
+export function getStoredChapterEncrypted(book: SourceType, chapter: string): boolean {
+  return localStorage.getItem(getChapterEncryptionStorageKey(book, chapter)) === 'true';
+}
+
+export function setStoredChapterSelection(book: SourceType, chapter: string, isSecured: boolean) {
+  localStorage.setItem(getSelectedChapterStorageKey(book), chapter);
+  localStorage.setItem(getChapterEncryptionStorageKey(book, chapter), String(isSecured));
+}
+
+export function getStoredChapterSelection(book: SourceType): { chapter: string; isSecured: boolean } | undefined {
+  const chapter = getStoredSelectedChapter(book);
+  if (!chapter) {
+    return undefined;
+  }
+
+  return {
+    chapter,
+    isSecured: getStoredChapterEncrypted(book, chapter),
+  };
+}
+
+export const LibraryContext = createContext<LibraryContextType | undefined>(undefined);
 
 export function useLoadContent(setData: (data: string) => void) {
   const pContext = useContext(PatreonContext);
-  const { encryptionPassword, encryptionPasswordV2 } = pContext!;
+  const encryptionPassword = pContext?.encryptionPassword ?? '';
+  const encryptionPasswordV2 = pContext?.encryptionPasswordV2;
 
-  async function loadContent(selectedBook: SourceType, selectedChapter: string, isSecured: boolean) {
-    const path = `book-data/${selectedBook}/../${selectedChapter}`;
-    try {
-      const response = await fetch(path);
-      if (!response.ok) {
-        throw new Error('Network response was not ok');
-      }
-
-      let data = await response.text();
-      if (isSecured && selectedBook === 'PSSJ') {
-        data = await decryptString(data, encryptionPassword);
-      } else if (isSecured) {
-        if (encryptionPasswordV2[selectedBook] === 'unset') {
-          console.error('Using encryption key before requesting it from backend. Try re-login.');
-        } else if (encryptionPasswordV2[selectedBook] === 'NOT_ALLOWED') {
-          console.error(
-            "Backend said you're not allowed. Which is weird. This function should only be callable after being allowed."
-          );
+  const loadContent = useCallback(
+    async (selectedBook: SourceType, selectedChapter: string, isSecured: boolean) => {
+      const path = `book-data/${selectedBook}/../${selectedChapter}`;
+      try {
+        const response = await fetch(path);
+        if (!response.ok) {
+          throw new Error('Network response was not ok');
         }
-        data = await decryptString(data, encryptionPasswordV2[selectedBook]);
-      }
 
-      setData(data);
-    } catch (error) {
-      console.error('Error loading content:', error);
-    }
-  }
+        let data = await response.text();
+        if (isSecured && selectedBook === 'PSSJ') {
+          data = await decryptString(data, encryptionPassword);
+        } else if (isSecured) {
+          const key = encryptionPasswordV2?.[selectedBook];
+          if (!key || key === 'unset' || key === 'NOT_ALLOWED') {
+            throw new Error(`Missing valid decryption key for ${selectedBook}.`);
+          }
+
+          data = await decryptString(data, key);
+        }
+
+        setData(data);
+      } catch (error) {
+        console.error('Error loading content:', error);
+      }
+    },
+    [encryptionPassword, encryptionPasswordV2, setData]
+  );
 
   return loadContent;
 }
