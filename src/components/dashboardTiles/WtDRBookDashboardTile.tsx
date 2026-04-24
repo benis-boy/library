@@ -1,4 +1,5 @@
 import { useContext, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import basicBookData from '../../basicBookData';
 import { LibraryContext } from '../../context/LibraryContext';
 import { useBookSelection } from './abstracts';
@@ -7,6 +8,7 @@ import { AmazonBuyButton } from '../general/AmazonButton';
 import { ExclusiveAmazonButton } from '../general/ExclusiveOnAmazonButton';
 
 const WtDRBookDashboardTile = ({ smallView }: { smallView: boolean }) => {
+  const navigate = useNavigate();
   const lContext = useContext(LibraryContext);
   const { setSelectedBook, libraryData } = lContext || { libraryData: {} };
   const bbd = basicBookData.find((bbd) => bbd.id === 'WtDR')!;
@@ -24,8 +26,9 @@ const WtDRBookDashboardTile = ({ smallView }: { smallView: boolean }) => {
         duration-300 hover:scale-105 hover:shadow-2xl flex flex-col ${isSelected ? 'border border-blue-500' : ''}
         ${isFlipped ? `${isLargeScreen ? 'w-auto' : 'max-w-72'} h-min` : 'w-72'}
         `}
-      onClick={() => {
-        setSelectedBook?.(bbd.id, false);
+      onClick={async () => {
+        await setSelectedBook?.(bbd.id, false);
+        navigate('/');
       }}
     >
       <button

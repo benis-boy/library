@@ -1,14 +1,16 @@
 import { ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { SourceType } from '../constants';
 import {
+  AccessDeniedReason,
+  BookSelectionResult,
+  ChapterSelectionResult,
+  clearLegacyChapterEncryptionKeys,
   getStoredChapterSelection,
   getStoredSelectedBook,
   isLibrarySelectionStorageKey,
-  LIBRARY_SELECTED_BOOK_KEY,
   LibraryContext,
   LibraryContextType,
   LibraryData,
-  LibraryPageType,
   setStoredChapterSelection,
   setStoredSelectedBook,
   useLoadContent,
@@ -21,8 +23,8 @@ const getStoredLibrarySelection = () => {
 
   return {
     selectedBook,
-    selectedChapter: chapterSelection?.chapter,
-    isSecured: chapterSelection?.isSecured,
+    selectedChapter: chapterSelection,
+    isSecured: undefined,
   };
 };
 
@@ -52,8 +54,11 @@ const emitLoadedChapterEvent = () => {
 export const LibraryProvider = ({ children }: { children: ReactNode }) => {
   const pContext = useContext(PatreonContext);
 
-  const [otherPageInfoType, setOtherPageInfoType] = useState<LibraryPageType>('homepage');
   const [libraryData, setLibraryData] = useState<LibraryData>(() => buildInitialLibraryData());
+
+  useEffect(() => {
+    clearLegacyChapterEncryptionKeys();
+  }, []);
 
   useEffect(() => {
     const handleStorage = (event: StorageEvent) => {
@@ -70,14 +75,20 @@ export const LibraryProvider = ({ children }: { children: ReactNode }) => {
       }
 
       const selection = getStoredLibrarySelection();
-      setLibraryData((old) => ({
-        ...old,
-        ...selection,
-      }));
+      setLibraryData((old) => {
+        if (
+          old.selectedBook === selection.selectedBook &&
+          old.selectedChapter === selection.selectedChapter &&
+          old.isSecured === selection.isSecured
+        ) {
+          return old;
+        }
 
-      if (event.key === LIBRARY_SELECTED_BOOK_KEY) {
-        setOtherPageInfoType('homepage');
-      }
+        return {
+          ...old,
+          ...selection,
+        };
+      });
     };
 
     window.addEventListener('storage', handleStorage);
@@ -86,100 +97,131 @@ export const LibraryProvider = ({ children }: { children: ReactNode }) => {
     };
   }, []);
 
-  const loadContent = useLoadContent((data) => {
-    setLibraryData((old) => ({ ...old, content: data }));
-  });
+  const handleLoadedContent = useCallback((data: string) => {
+    setLibraryData((old) => {
+      if (old.content === data) {
+        return old;
+      }
 
-  const getBlockedPageForSecuredChapter = useCallback(
-    (secured: boolean): LibraryPageType => {
+      return { ...old, content: data };
+    });
+  }, []);
+
+  const loadContent = useLoadContent(handleLoadedContent);
+
+  const resolveChapterSecuredFromNavigator = useCallback(async (book: SourceType, chapter: string) => {
+    try {
+      const response = await fetch(`navigation-data/${book}_navigation.html`);
+      if (!response.ok) {
+        return undefined;
+      }
+
+      const html = await response.text();
+      const escapedChapter = chapter.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const chapterRegex = new RegExp(`loadContent\\('${escapedChapter}'(?:,\\s*(true|false))?\\)`);
+      const match = html.match(chapterRegex);
+      if (!match) {
+        return undefined;
+      }
+
+      return match[1] === 'true';
+    } catch {
+      return undefined;
+    }
+  }, []);
+
+  const getAccessDeniedReason = useCallback(
+    (secured: boolean): AccessDeniedReason | null => {
       if (!secured) {
-        return false;
+        return null;
       }
 
       if (!pContext?.isLoggedIn) {
-        return 'not_logged_in';
+        return 'login_required';
       }
 
       if (!pContext?.isSupporter) {
-        return 'not_a_supporter';
+        return 'supporter_required';
       }
 
-      return false;
+      return null;
     },
     [pContext?.isLoggedIn, pContext?.isSupporter]
   );
 
   const setSelection = useCallback((book: SourceType, chapter: string | undefined, isSecured: boolean | undefined) => {
-    setLibraryData((old) => ({
-      ...old,
-      selectedBook: book,
-      selectedChapter: chapter,
-      isSecured,
-    }));
+    setLibraryData((old) => {
+      if (old.selectedBook === book && old.selectedChapter === chapter && old.isSecured === isSecured) {
+        return old;
+      }
+
+      return {
+        ...old,
+        selectedBook: book,
+        selectedChapter: chapter,
+        isSecured,
+      };
+    });
 
     setStoredSelectedBook(book);
     if (chapter) {
-      setStoredChapterSelection(book, chapter, isSecured === true);
+      setStoredChapterSelection(book, chapter);
     }
   }, []);
 
   const setSelectedChapter = useCallback(
-    async (book: SourceType, chapter: string, secured: boolean) => {
-      setSelection(book, chapter, secured);
-
-      const blockedPage = getBlockedPageForSecuredChapter(secured);
-      if (blockedPage) {
-        setOtherPageInfoType(blockedPage);
-        return;
+    async (book: SourceType, chapter: string, secured?: boolean): Promise<ChapterSelectionResult> => {
+      let effectiveSecured = secured;
+      if (typeof effectiveSecured !== 'boolean') {
+        const resolved = await resolveChapterSecuredFromNavigator(book, chapter);
+        effectiveSecured = resolved === true;
       }
 
-      await loadContent(book, chapter, secured);
-      setOtherPageInfoType(false);
+      setSelection(book, chapter, effectiveSecured);
+
+      const deniedReason = getAccessDeniedReason(effectiveSecured);
+      if (deniedReason) {
+        return { ok: false, reason: deniedReason };
+      }
+
+      await loadContent(book, chapter, effectiveSecured);
       emitLoadedChapterEvent();
+      return { ok: true };
     },
-    [getBlockedPageForSecuredChapter, loadContent, setSelection]
+    [getAccessDeniedReason, loadContent, resolveChapterSecuredFromNavigator, setSelection]
   );
 
   const setSelectedBook = useCallback(
-    (book: SourceType, loadChapterToo: boolean) => {
+    async (book: SourceType, loadChapterToo: boolean): Promise<BookSelectionResult> => {
       const chapterSelection = getStoredChapterSelection(book);
-      setSelection(book, chapterSelection?.chapter, chapterSelection?.isSecured);
+      setSelection(book, chapterSelection, undefined);
 
       if (!loadChapterToo) {
-        return;
+        return { ok: true, mode: 'selected_only' };
       }
 
       if (!chapterSelection) {
         emitLoadFirstChapterEvent(book);
-        return;
+        return { ok: true, mode: 'requested_first_chapter' };
       }
 
-      const blockedPage = getBlockedPageForSecuredChapter(chapterSelection.isSecured);
-      if (blockedPage) {
-        setOtherPageInfoType(blockedPage);
-        return;
+      const chapterResult = await setSelectedChapter(book, chapterSelection);
+      if (!chapterResult.ok) {
+        return chapterResult;
       }
 
-      void setSelectedChapter(book, chapterSelection.chapter, chapterSelection.isSecured);
+      return { ok: true, mode: 'loaded_stored_chapter' };
     },
-    [getBlockedPageForSecuredChapter, setSelectedChapter, setSelection]
+    [setSelectedChapter, setSelection]
   );
-
-  const showOtherPage = useCallback((newType: LibraryPageType) => {
-    setOtherPageInfoType(newType);
-  }, []);
 
   const value = useMemo<LibraryContextType>(
     () => ({
       libraryData,
       setSelectedBook,
       setSelectedChapter,
-      otherPageInfo: {
-        pageType: otherPageInfoType,
-        showOtherPage,
-      },
     }),
-    [libraryData, otherPageInfoType, setSelectedBook, setSelectedChapter, showOtherPage]
+    [libraryData, setSelectedBook, setSelectedChapter]
   );
 
   return <LibraryContext.Provider value={value}>{children}</LibraryContext.Provider>;

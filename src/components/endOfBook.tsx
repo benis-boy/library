@@ -1,10 +1,8 @@
 import { Box, Button, Typography } from '@mui/material';
-import { useContext } from 'react';
-import { LibraryContext } from '../context/LibraryContext';
+import { useNavigate } from 'react-router-dom';
 
 const EndOfBookMessage = () => {
-  const lContext = useContext(LibraryContext);
-  const { otherPageInfo } = lContext ?? {};
+  const navigate = useNavigate();
 
   return (
     <Box
@@ -41,7 +39,7 @@ const EndOfBookMessage = () => {
       <Typography variant="body1" gutterBottom>
         Or check out if I have added some other books yet.
       </Typography>
-      <Button variant="contained" color="primary" onClick={() => otherPageInfo?.showOtherPage('homepage')}>
+      <Button variant="contained" color="primary" onClick={() => navigate('/')}>
         Go to Home Page
       </Button>
     </Box>

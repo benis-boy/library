@@ -1,20 +1,69 @@
 import { Fragment, useContext, useEffect, useRef } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { ConfigurationContext } from '../context/ConfigurationContext';
-import { LibraryContext } from '../context/LibraryContext';
-import { ConfigurationView } from './ConfigurationView';
-import EndOfBookMessage from './endOfBook';
-import { Homepage } from './homepage';
-import PatreonMessage from './notASupporter';
-import AccessRestrictedMessage from './notLoggedIn';
+import {
+  getAccessDeniedRoute,
+  getReaderRoute,
+  getStoredChapterSelection,
+  LibraryContext,
+  normalizeRouteBookId,
+  parseReaderRoute,
+} from '../context/LibraryContext';
 
 export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLDivElement | null> }) => {
+  const navigate = useNavigate();
+  const params = useParams<{ bookId?: string; chapter?: string }>();
   const { isDarkMode, selectedFont, fontSize } = useContext(ConfigurationContext);
   const lContext = useContext(LibraryContext);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const {
-    libraryData: { content },
-    otherPageInfo,
-  } = lContext || { libraryData: {} };
+    libraryData: { content } = { content: '' },
+    setSelectedBook,
+    setSelectedChapter,
+  } = lContext || {};
+
+  useEffect(() => {
+    if (!setSelectedBook || !setSelectedChapter) {
+      return;
+    }
+
+    const routeBook = normalizeRouteBookId(params.bookId);
+    if (!routeBook) {
+      navigate('/', { replace: true });
+      return;
+    }
+
+    const routeInfo = parseReaderRoute(params.bookId, params.chapter);
+
+    if (!routeInfo) {
+      const stored = getStoredChapterSelection(routeBook);
+      if (stored) {
+        const currentPath = window.location.hash.replace(/^#/, '') || '/';
+        const targetPath = getReaderRoute(routeBook, stored);
+        if (currentPath !== targetPath) {
+          navigate(targetPath, { replace: true });
+        }
+      } else {
+        void setSelectedBook(routeBook, true);
+      }
+      return;
+    }
+
+    const storedSelection = getStoredChapterSelection(routeInfo.book);
+    if (storedSelection === routeInfo.chapter && content) {
+      return;
+    }
+
+    void setSelectedChapter(routeInfo.book, routeInfo.chapter).then((result) => {
+      if (!result) {
+        return;
+      }
+
+      if (!result.ok) {
+        navigate(getAccessDeniedRoute(result.reason), { replace: true });
+      }
+    });
+  }, [content, navigate, params.bookId, params.chapter, setSelectedBook, setSelectedChapter]);
 
   useEffect(() => {
     const adjustHeight = () => {
@@ -45,7 +94,7 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
         iframe.removeEventListener('load', _adjust);
       }
     };
-  }, [content, iframeRef, otherPageInfo?.pageType]);
+  }, [content, iframeRef]);
 
   useEffect(() => {
     const handleLoadedNewChapter = () => {
@@ -70,18 +119,6 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
   }, [isDarkMode, selectedFont, fontSize]);
 
   if (!lContext) return <Fragment />;
-
-  if (otherPageInfo?.pageType === 'homepage') {
-    return <Homepage />;
-  } else if (otherPageInfo?.pageType === 'not_a_supporter') {
-    return <PatreonMessage />;
-  } else if (otherPageInfo?.pageType === 'not_logged_in') {
-    return <AccessRestrictedMessage />;
-  } else if (otherPageInfo?.pageType === 'configuration') {
-    return <ConfigurationView />;
-  } else if (otherPageInfo?.pageType === 'end_of_book') {
-    return <EndOfBookMessage />;
-  }
 
   return (
     <>

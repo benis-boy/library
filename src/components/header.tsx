@@ -1,4 +1,5 @@
 import { Fragment, useContext, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { LibraryContext } from '../context/LibraryContext';
 import { PatreonContext } from '../context/PatreonContext';
 import { Box, SwipeableDrawer, useMediaQuery, useTheme } from '@mui/material';
@@ -15,6 +16,7 @@ const WebsiteHeader = ({
   setNavigatorVisible: React.Dispatch<React.SetStateAction<boolean>>;
   ref: React.RefObject<HTMLDivElement | null>;
 }) => {
+  const navigate = useNavigate();
   const lContext = useContext(LibraryContext);
   const pContext = useContext(PatreonContext);
   const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
@@ -35,12 +37,8 @@ const WebsiteHeader = ({
 
   if (!lContext) return <Fragment />;
   if (!pContext) return <Fragment />;
-  const {
-    otherPageInfo,
-    libraryData: { selectedBook },
-  } = lContext;
+  const { libraryData: { selectedBook } } = lContext;
   const { isLoggedIn, handleLogin, handleLogout, userInfo } = pContext;
-
   const title = basicBookData.find((bbd) => bbd.id === selectedBook)?.title ?? 'Error - book not found';
 
   return (
@@ -62,7 +60,7 @@ const WebsiteHeader = ({
         },
       }}
       className="w-full"
-      variant={otherPageInfo.pageType ? 'permanent' : hasTouch && !wasVisible ? 'temporary' : 'persistent'}
+      variant={hasTouch && !wasVisible ? 'temporary' : 'persistent'}
       anchor="top"
       open={isHeaderVisible}
       onClose={() => setIsHeaderVisible(false)}
@@ -98,7 +96,7 @@ const WebsiteHeader = ({
           </button>
           <button
             id="home-button"
-            onClick={() => otherPageInfo.showOtherPage('homepage')}
+            onClick={() => navigate('/')}
             className="bg-[#BE3144] p-2 h-11 w-11 flex items-center justify-center"
           >
             <svg

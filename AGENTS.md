@@ -8,6 +8,7 @@
 
 ## Commands (root)
 - `npm run dev` - Vite dev server.
+- `npm run dev:browser` - Vite dev server with browser auto-open.
 - `npm run build` - `tsc -b && vite build` (typecheck + production bundle).
 - `npm run lint` - ESLint run.
 - `npm run deploy` - publishes `dist/` with `gh-pages` (runs `predeploy` -> `npm run build`).
@@ -15,6 +16,8 @@
 
 ## Tooling quirks that matter
 - ESLint source of truth is `eslint.config.js` (flat config, TS files only); `.eslintrc.json` is legacy.
+- Routing uses `HashRouter` for GitHub Pages compatibility (`/library/#/...`), so avoid history-mode assumptions.
+- Reader routes carry selection in URL (`/library/#/reader/:bookId/:chapter?`); keep route params and chapter state in sync.
 - Vite base path is `/library/` (`vite.config.ts`); OAuth redirect uses the same URL in both frontend and Netlify function. If URL/base changes, update both:
   - `src/context/PatreonProvider.tsx`
   - `netlify/functions/patreon-oauth/patreon-oauth.js`

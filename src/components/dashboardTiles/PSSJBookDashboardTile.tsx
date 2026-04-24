@@ -1,9 +1,11 @@
 import { useContext } from 'react';
+import { useNavigate } from 'react-router-dom';
 import basicBookData from '../../basicBookData';
-import { LibraryContext } from '../../context/LibraryContext';
+import { getAccessDeniedRoute, getReaderRoute, LibraryContext } from '../../context/LibraryContext';
 import { useBookSelection } from './abstracts';
 
 const PSSJBookDashboardTile = ({ smallView }: { smallView: boolean }) => {
+  const navigate = useNavigate();
   const lContext = useContext(LibraryContext);
   const { setSelectedBook, libraryData } = lContext || { libraryData: {} };
   const bbd = basicBookData.find((bbd) => bbd.id === 'PSSJ')!;
@@ -14,8 +16,9 @@ const PSSJBookDashboardTile = ({ smallView }: { smallView: boolean }) => {
     <div
       key={bbd.id}
       className={`shadow-lg rounded-lg overflow-hidden transform transition-all duration-300 w-72 hover:scale-105 hover:shadow-2xl flex ${isSelected ? 'border border-blue-500' : ''}`}
-      onClick={() => {
-        setSelectedBook?.(bbd.id, false);
+      onClick={async () => {
+        await setSelectedBook?.(bbd.id, false);
+        navigate('/');
       }}
     >
       <div className={`${isSmallTile ? '' : ' flex-col'} flex`}>
@@ -38,9 +41,19 @@ const PSSJBookDashboardTile = ({ smallView }: { smallView: boolean }) => {
                 onClick={!isLargeScreen ? (e) => e.stopPropagation() : undefined}
               >
                 <button
-                  onClick={(e) => {
+                  onClick={async (e) => {
                     e.stopPropagation();
-                    setSelectedBook?.(bbd.id, true);
+                    const result = await setSelectedBook?.(bbd.id, true);
+                    if (!result) {
+                      return;
+                    }
+
+                    if (!result.ok) {
+                      navigate(getAccessDeniedRoute(result.reason));
+                      return;
+                    }
+
+                    navigate(getReaderRoute(bbd.id));
                   }}
                   className="px-4 my-2 py-1 bg-[#872341] hover:scale-105 text-white font-semibold rounded-lg shadow-md transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-opacity-50"
                 >

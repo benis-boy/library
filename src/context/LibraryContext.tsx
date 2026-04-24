@@ -2,13 +2,26 @@ import { createContext, useCallback, useContext } from 'react';
 import { SourceType, SourceTypes } from '../constants';
 import { PatreonContext } from './PatreonContext';
 
-export type LibraryPageType =
-  | false
-  | 'homepage'
-  | 'not_a_supporter'
-  | 'not_logged_in'
-  | 'configuration'
-  | 'end_of_book';
+export type AccessDeniedReason = 'login_required' | 'supporter_required';
+
+export type ChapterSelectionResult = { ok: true } | { ok: false; reason: AccessDeniedReason };
+
+export type ReaderRouteInfo = {
+  book: SourceType;
+  chapter: string;
+};
+
+export type BookSelectionResult =
+  | { ok: true; mode: 'selected_only' | 'requested_first_chapter' | 'loaded_stored_chapter' }
+  | { ok: false; reason: AccessDeniedReason };
+
+export const getAccessDeniedRoute = (reason: AccessDeniedReason) =>
+  reason === 'login_required' ? '/access/login-required' : '/access/supporter-required';
+
+export const getReaderRoute = (book: SourceType, chapter?: string) =>
+  chapter
+    ? `/reader/${encodeURIComponent(book)}/${encodeURIComponent(chapter)}`
+    : `/reader/${encodeURIComponent(book)}`;
 
 export type LibraryData = {
   selectedBook: SourceType;
@@ -19,32 +32,61 @@ export type LibraryData = {
 
 export type LibraryContextType = {
   libraryData: LibraryData;
-  setSelectedBook: (book: SourceType, loadChapterToo: boolean) => void;
-  setSelectedChapter: (book: SourceType, chapter: string, secured: boolean) => Promise<void>;
-  otherPageInfo: {
-    pageType: LibraryPageType;
-    showOtherPage: (pageType: LibraryPageType) => void;
-  };
+  setSelectedBook: (book: SourceType, loadChapterToo: boolean) => Promise<BookSelectionResult>;
+  setSelectedChapter: (book: SourceType, chapter: string, secured?: boolean) => Promise<ChapterSelectionResult>;
 };
 
 export const LIBRARY_SELECTED_BOOK_KEY = 'SELECTED_BOOK';
 export const LIBRARY_SELECTED_CHAPTER_SUFFIX = '_SELECTED_CHAPTER';
-export const LIBRARY_ENCRYPTION_PREFIX = 'IS_ENCRYPTED_';
+const LEGACY_LIBRARY_ENCRYPTION_PREFIX = 'IS_ENCRYPTED_';
 
 export const DEFAULT_BOOK: SourceType = 'PSSJ';
 
 const isSourceType = (value: string | null): value is SourceType =>
   value !== null && SourceTypes.includes(value as SourceType);
 
-export const getSelectedChapterStorageKey = (book: SourceType) => `${book}${LIBRARY_SELECTED_CHAPTER_SUFFIX}`;
+export const normalizeRouteBookId = (value: string | undefined): SourceType | undefined => {
+  if (!value) {
+    return undefined;
+  }
 
-export const getChapterEncryptionStorageKey = (book: SourceType, chapter: string) =>
-  `${LIBRARY_ENCRYPTION_PREFIX}${book}_${chapter}`;
+  const decoded = decodeURIComponent(value);
+  return isSourceType(decoded) ? decoded : undefined;
+};
+
+const normalizeChapterFromRoute = (value: string | undefined): string | undefined => {
+  if (!value) {
+    return undefined;
+  }
+
+  const decoded = decodeURIComponent(value);
+  return decoded.trim() ? decoded : undefined;
+};
+
+export const parseReaderRoute = (bookParam: string | undefined, chapterParam: string | undefined): ReaderRouteInfo | undefined => {
+  const book = normalizeRouteBookId(bookParam);
+  const chapter = normalizeChapterFromRoute(chapterParam);
+  if (!book || !chapter) {
+    return undefined;
+  }
+
+  return { book, chapter };
+};
+
+export const getSelectedChapterStorageKey = (book: SourceType) => `${book}${LIBRARY_SELECTED_CHAPTER_SUFFIX}`;
 
 export const isLibrarySelectionStorageKey = (key: string) =>
   key === LIBRARY_SELECTED_BOOK_KEY ||
-  key.endsWith(LIBRARY_SELECTED_CHAPTER_SUFFIX) ||
-  key.startsWith(LIBRARY_ENCRYPTION_PREFIX);
+  key.endsWith(LIBRARY_SELECTED_CHAPTER_SUFFIX);
+
+export const clearLegacyChapterEncryptionKeys = () => {
+  for (let index = localStorage.length - 1; index >= 0; index--) {
+    const key = localStorage.key(index);
+    if (key?.startsWith(LEGACY_LIBRARY_ENCRYPTION_PREFIX)) {
+      localStorage.removeItem(key);
+    }
+  }
+};
 
 export function getStoredSelectedBook(): SourceType {
   const storedBook = localStorage.getItem(LIBRARY_SELECTED_BOOK_KEY);
@@ -64,26 +106,11 @@ export function getStoredSelectedChapter(book: SourceType): string | undefined {
   return localStorage.getItem(getSelectedChapterStorageKey(book)) || undefined;
 }
 
-export function getStoredChapterEncrypted(book: SourceType, chapter: string): boolean {
-  return localStorage.getItem(getChapterEncryptionStorageKey(book, chapter)) === 'true';
-}
-
-export function setStoredChapterSelection(book: SourceType, chapter: string, isSecured: boolean) {
+export function setStoredChapterSelection(book: SourceType, chapter: string) {
   localStorage.setItem(getSelectedChapterStorageKey(book), chapter);
-  localStorage.setItem(getChapterEncryptionStorageKey(book, chapter), String(isSecured));
 }
 
-export function getStoredChapterSelection(book: SourceType): { chapter: string; isSecured: boolean } | undefined {
-  const chapter = getStoredSelectedChapter(book);
-  if (!chapter) {
-    return undefined;
-  }
-
-  return {
-    chapter,
-    isSecured: getStoredChapterEncrypted(book, chapter),
-  };
-}
+export const getStoredChapterSelection = getStoredSelectedChapter;
 
 export const LibraryContext = createContext<LibraryContextType | undefined>(undefined);
 

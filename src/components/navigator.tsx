@@ -1,8 +1,15 @@
 import { SwipeableDrawer, useMediaQuery, useTheme } from '@mui/material';
 import { Fragment, useContext, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { SourceType } from '../constants';
 import { ConfigurationContext } from '../context/ConfigurationContext';
-import { LibraryContext } from '../context/LibraryContext';
+import {
+  getAccessDeniedRoute,
+  getReaderRoute,
+  getStoredChapterSelection,
+  LibraryContext,
+  normalizeRouteBookId,
+} from '../context/LibraryContext';
 
 export const Navigator = ({
   open,
@@ -15,6 +22,7 @@ export const Navigator = ({
   ref: React.RefObject<HTMLDivElement | null>;
   isHeaderVisible: boolean;
 }) => {
+  const navigate = useNavigate();
   const { isDarkMode, selectedFont, fontSize } = useContext(ConfigurationContext);
   const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
   const theme = useTheme();
@@ -24,9 +32,9 @@ export const Navigator = ({
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const {
     libraryData: { selectedBook, selectedChapter } = {} as { selectedBook: SourceType; selectedChapter?: string },
-    otherPageInfo,
     setSelectedChapter,
   } = lContext || {};
+  const selectedBookOrDefault: SourceType = selectedBook || normalizeRouteBookId(window.location.hash.split('/')[2]) || 'PSSJ';
 
   const getParamsInsideLoadContentOuterHtml = (link: HTMLAnchorElement) => {
     const match = link.outerHTML.match(/loadContent\(([^)]+)\)/);
@@ -50,21 +58,29 @@ export const Navigator = ({
 
   useEffect(() => {
     // Listen for messages from the iframe
-    const handleMessage = (event: MessageEvent) => {
+    const handleMessage = async (event: MessageEvent) => {
       if (!(event.origin.startsWith('https://benis-boy.github.io') || event.origin.startsWith('http://localhost:'))) {
         return; // Ignore untrusted messages
       }
 
       if (event.data.type === 'link-clicked') {
         const chapter = event.data?.url;
-        setSelectedChapter?.(selectedBook, chapter, event.data.isPaid);
+        if (!chapter) {
+          return;
+        }
+        const result = await setSelectedChapter?.(selectedBookOrDefault, chapter, event.data.isPaid);
+        if (result && !result.ok) {
+          navigate(getAccessDeniedRoute(result.reason));
+        } else {
+          navigate(getReaderRoute(selectedBookOrDefault, chapter));
+        }
       }
     };
     window.addEventListener('message', handleMessage);
     return () => {
       window.removeEventListener('message', handleMessage);
     };
-  }, [setSelectedChapter, selectedBook]);
+  }, [navigate, selectedBookOrDefault, setSelectedChapter]);
 
   useEffect(() => {
     // Highlight selected chapter after iframe loads
@@ -102,7 +118,7 @@ export const Navigator = ({
       }
     }
     setTimeout(update, 300);
-  }, [selectedChapter, selectedBook, iframeRef.current?.srcdoc, hasTouch]);
+  }, [selectedChapter, selectedBookOrDefault, iframeRef.current?.srcdoc, hasTouch]);
   useEffect(() => {
     // Highlight selected chapter after iframe loads
     function update() {
@@ -133,7 +149,6 @@ export const Navigator = ({
     setTimeout(update);
   }, [selectedChapter]);
 
-  const showOtherPage = otherPageInfo?.showOtherPage;
   useEffect(() => {
     const handleLoadNextChapter = () => {
       if (iframeRef.current) {
@@ -148,9 +163,15 @@ export const Navigator = ({
               if (index + 1 < links.length) {
                 const nextLink = links[index + 1];
                 const { chapter, isPaid } = getParamsInsideLoadContentOuterHtml(nextLink)!;
-                setSelectedChapter?.(selectedBook, chapter, isPaid);
+                void setSelectedChapter?.(selectedBookOrDefault, chapter, isPaid).then((result) => {
+                  if (result && !result.ok) {
+                    navigate(getAccessDeniedRoute(result.reason));
+                  } else {
+                    navigate(getReaderRoute(selectedBookOrDefault, chapter));
+                  }
+                });
               } else {
-                showOtherPage?.('end_of_book');
+                navigate('/reader/end');
               }
               break;
             }
@@ -163,11 +184,11 @@ export const Navigator = ({
     return () => {
       window.removeEventListener('loadNextChapter', handleLoadNextChapter);
     };
-  }, [showOtherPage, selectedBook, lContext?.libraryData.selectedChapter, setSelectedChapter]);
+  }, [navigate, selectedBookOrDefault, lContext?.libraryData.selectedChapter, setSelectedChapter]);
 
   useEffect(() => {
     const handleLoadFirstChapter = (e: Event) => {
-      const _e = e as CustomEvent<{ book: string }>;
+      const _e = e as CustomEvent<{ book: SourceType }>;
       const iframeDocument = iframeRef.current!.contentDocument;
       let foundChapter = false;
       if (iframeDocument) {
@@ -177,7 +198,13 @@ export const Navigator = ({
           const link = links[0];
           const { chapter, isPaid } = getParamsInsideLoadContentOuterHtml(link)!;
           if (_e.detail.book && chapter.startsWith(_e.detail.book)) {
-            setSelectedChapter?.(_e.detail.book as SourceType, chapter, isPaid);
+            void setSelectedChapter?.(_e.detail.book as SourceType, chapter, isPaid).then((result) => {
+              if (result && !result.ok) {
+                navigate(getAccessDeniedRoute(result.reason));
+              } else {
+                navigate(getReaderRoute(_e.detail.book as SourceType, chapter));
+              }
+            });
             foundChapter = true;
           }
         }
@@ -192,11 +219,30 @@ export const Navigator = ({
               const link = links[0];
               const { chapter, isPaid } = getParamsInsideLoadContentOuterHtml(link)!;
               if (_e.detail.book && chapter.startsWith(_e.detail.book)) {
-                setSelectedChapter?.(_e.detail.book as SourceType, chapter, isPaid);
+                void setSelectedChapter?.(_e.detail.book as SourceType, chapter, isPaid).then((result) => {
+                  if (result && !result.ok) {
+                    navigate(getAccessDeniedRoute(result.reason));
+                  } else {
+                    navigate(getReaderRoute(_e.detail.book as SourceType, chapter));
+                  }
+                });
               }
             }
           }
         };
+      }
+
+      if (!foundChapter && _e.detail.book) {
+        const stored = getStoredChapterSelection(_e.detail.book as SourceType);
+        if (stored) {
+          void setSelectedChapter?.(_e.detail.book as SourceType, stored).then((result) => {
+            if (result && !result.ok) {
+              navigate(getAccessDeniedRoute(result.reason));
+            } else {
+              navigate(getReaderRoute(_e.detail.book as SourceType, stored));
+            }
+          });
+        }
       }
     };
 
@@ -204,7 +250,7 @@ export const Navigator = ({
     return () => {
       window.removeEventListener('loadFirstChapter', handleLoadFirstChapter);
     };
-  }, [selectedBook, selectedChapter, setSelectedChapter]);
+  }, [navigate, selectedBookOrDefault, selectedChapter, setSelectedChapter]);
 
   useEffect(() => {
     if (iframeRef.current) {
@@ -241,7 +287,7 @@ export const Navigator = ({
         <iframe
           ref={iframeRef}
           onLoad={() => injectStyles(iframeRef, { isDarkMode, selectedFont, fontSize })}
-          src={`navigation-data/${selectedBook}_navigation.html`}
+          src={`navigation-data/${selectedBookOrDefault}_navigation.html`}
           title="External HTML"
           width="100%"
           height="100%"
