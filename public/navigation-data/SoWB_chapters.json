@@ -2,8 +2,14 @@
   "bookId": "SoWB",
   "chapters": [
     {
-      "chapter": "SoWB/Data/01_Intro.html",
-      "title": "01 Intro",
+      "chapter": "SoWB/Data/01_Brand New Day in Hell.html",
+      "title": "01 Brand New Day in Hell",
+      "isSecured": false,
+      "volume": "Data"
+    },
+    {
+      "chapter": "SoWB/Data/02_Birmingham.html",
+      "title": "02 Birmingham",
       "isSecured": false,
       "volume": "Data"
     }
