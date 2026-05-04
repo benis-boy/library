@@ -4,8 +4,7 @@ import basicBookData from '../../basicBookData';
 import { LibraryContext } from '../../context/LibraryContext';
 import { useBookSelection } from './abstracts';
 import WtDRDescription from './WtDRDescription';
-import { AmazonBuyButton } from '../general/AmazonButton';
-import { ExclusiveAmazonButton } from '../general/ExclusiveOnAmazonButton';
+import { AmazonBuyButton, ExclusiveAmazonButton } from '../general/AmazonButton';
 
 const WtDRBookDashboardTile = ({ smallView }: { smallView: boolean }) => {
   const navigate = useNavigate();

@@ -7,6 +7,18 @@ import sys
 
 
 chapter_title_mapping: dict[str, str] = {}
+IMAGE_MARKER_PATTERN = re.compile(r'\[\[BBIMG:([0-9a-f]{8})\]\]')
+
+
+def build_chapter_image_trigger(image_id: str):
+    safe_id = html.escape(image_id, quote=True)
+    thumb_src = f'assets/gallery/thumb/{safe_id}.webp'
+    return (
+        f'<button class="chapter-image-trigger" data-image-id="{safe_id}" type="button" '
+        f'aria-label="Open image {safe_id}">'
+        f'<img src="{thumb_src}" alt="Artwork preview {safe_id}" loading="lazy" decoding="async" fetchpriority="low" />'
+        f'</button>'
+    )
 
 
 def clean_markdown_file(file_path: str, output_file_path: str):
@@ -131,6 +143,12 @@ def txt_to_html(file_path: str, handle_hr: bool = True):
 
     for line in lines:
         stripped = line.strip()
+        marker_match = IMAGE_MARKER_PATTERN.fullmatch(stripped)
+        if marker_match:
+            wrapped_lines.append(build_chapter_image_trigger(marker_match.group(1)))
+            new_paragraph = True
+            continue
+
         if new_paragraph and stripped:
             if stripped == '<hr />':
                 wrapped_lines.append(stripped)

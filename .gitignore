@@ -24,13 +24,12 @@ dist-ssr
 *.sw?
 __pycache__/
 
-# private stuff
-apps/simple-tts
-dev-tools
-
 # secret stuff
 *_raw/
 /book-data
 secret.txt
 *_secret.txt
 *.webnovel.html
+
+# unrelated
+simple-tts

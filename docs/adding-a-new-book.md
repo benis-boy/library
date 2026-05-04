@@ -59,7 +59,7 @@ book_id_to_secret_path = {
 }
 ```
 
-### 7. Encryption Rules (`book-data/encrypted_files.md`)
+### 7. Encryption Rules (`deployment/encrypted_files.md`)
 
 If the new book contains secured chapters, add folder/file rules and exceptions.
 

@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
@@ -16,6 +17,45 @@ book_id_to_secret_path = {
     "WtDR": "WtDR_secret.txt",
     "SoWB": "SoWB_secret.txt"
 }
+
+BBIMG_MARKER_LINE_PATTERN = re.compile(r'^\s*\[\[BBIMG:[0-9a-f]{8}\]\]\s*$', re.MULTILINE)
+CHAPTER_IMAGE_TRIGGER_PATTERN = re.compile(r'<button class="chapter-image-trigger"[^>]*>.*?</button>', re.DOTALL)
+
+
+def strip_gallery_markers_for_raw(file_path: str):
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+    except OSError:
+        return False
+
+    cleaned = CHAPTER_IMAGE_TRIGGER_PATTERN.sub('', content)
+    cleaned = BBIMG_MARKER_LINE_PATTERN.sub('', cleaned)
+    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+
+    if cleaned == content:
+        return False
+
+    with open(file_path, 'w', encoding='utf-8') as f:
+        f.write(cleaned)
+    return True
+
+
+def sanitize_raw_export_folder(raw_folder: str):
+    updated_count = 0
+    for root, _, files in os.walk(raw_folder):
+        for file_name in files:
+            if not file_name.endswith(('.html', '.txt', '.md')):
+                continue
+
+            file_path = os.path.join(root, file_name)
+            if strip_gallery_markers_for_raw(file_path):
+                updated_count += 1
+
+    if updated_count > 0:
+        print(f"Sanitized gallery markers for raw export files: {updated_count}")
+
+
 def copy_folder(src_folder):
     dst_folder = f"{src_folder}_raw"
     # If the destination folder exists, delete it
@@ -23,6 +63,7 @@ def copy_folder(src_folder):
         shutil.rmtree(dst_folder)
     # Copy the folder
     shutil.copytree(src_folder, dst_folder)
+    sanitize_raw_export_folder(dst_folder)
     print(f"Copied folder to {dst_folder}")
     return dst_folder
 

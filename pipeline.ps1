@@ -1,26 +1,46 @@
+function InvokePythonStep {
+    param(
+        [string]$description,
+        [string[]]$arguments
+    )
+
+    Write-Host $description -ForegroundColor Cyan
+    & python @arguments
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Step failed: $description" -ForegroundColor Red
+        exit 1
+    }
+}
+
+function MoveBookArtifactsToRaw {
+    param (
+        [string]$bookId
+    )
+
+    $bookDataRoot = "book-data"
+    $rawPath = Join-Path $bookDataRoot "$bookId`_raw"
+    if (-not (Test-Path $rawPath)) {
+        New-Item -Path $rawPath -ItemType Directory | Out-Null
+    }
+
+    Get-ChildItem -Path $bookDataRoot -File |
+    Where-Object {
+        $_.Name -like "$bookId`_*" -and
+        $_.Name -ne "$bookId`_export.md"
+    } |
+    ForEach-Object {
+        Move-Item -Path $_.FullName -Destination (Join-Path $rawPath $_.Name) -Force
+    }
+}
+
 function HandleBook {
     param (
         [string]$bookId
     )
 
-    function InvokePythonStep {
-        param(
-            [string]$description,
-            [string[]]$arguments
-        )
-
-        Write-Host $description -ForegroundColor Cyan
-        & python @arguments
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "Step failed: $description" -ForegroundColor Red
-            exit 1
-        }
-    }
-
     # Cleanup old folders
     $pathsToRemove = @(
         "book-data\$bookId",
-        "book-data\$bookId`_raw",
         "book-data\$bookId`_chapters_manifest.json",
         "book-data\$bookId`_chapters.json",
         "public\book-data\$bookId",
@@ -44,7 +64,7 @@ function HandleBook {
         ".\deployment\generate_metadata.py",
         $bookId,
         "book-data\$bookId`_chapters_manifest.json",
-        "book-data\encrypted_files.md",
+        "deployment\encrypted_files.md",
         "book-data\$bookId`_chapters.json"
     )
 
@@ -66,7 +86,7 @@ function HandleBook {
         ".\deployment\encryptExport.py",
         $bookId,
         "book-data\$bookId",
-        "book-data\encrypted_files.md"
+        "deployment\encrypted_files.md"
     )
 
     Copy-Item -Path "book-data\$bookId`_navigation.html" -Destination "public\navigation-data\$bookId`_navigation.html" -Force
@@ -86,6 +106,8 @@ function HandleBook {
         $newName = $_.Name -replace '#', '_'
         Rename-Item -Path $_.FullName -NewName $newName -Force
     }
+
+    MoveBookArtifactsToRaw -bookId $bookId
 }
 
 function ItemPlaceholder {
@@ -96,13 +118,30 @@ function ItemPlaceholder {
     (Get-Content $filePath) -replace '<li>Data', '<li>' | Set-Content $filePath
 }
 
+function HandleGallery {
+    param(
+        [bool]$retranslateTags = $false
+    )
+
+    $arguments = @(
+        ".\deployment\generate_gallery_json.py"
+    )
+
+    if ($retranslateTags) {
+        $arguments += '--retranslate-tags'
+    }
+
+    InvokePythonStep -description "Generating gallery assets + manifest" -arguments $arguments
+}
+
 function ShowUsage {
     Write-Host "Usage:" -ForegroundColor Cyan
-    Write-Host "  .\pipeline.ps1 [--book <BookId> ...] [--commit]"
+    Write-Host "  .\pipeline.ps1 [--book <BookId> ...] [--retranslate-tags] [--commit]"
     Write-Host ""
     Write-Host "Examples:" -ForegroundColor Cyan
     Write-Host "  .\pipeline.ps1 --book PSSJ"
     Write-Host "  .\pipeline.ps1 --book PSSJ --book WtDR"
+    Write-Host "  .\pipeline.ps1 --retranslate-tags"
     Write-Host "  .\pipeline.ps1 --book PSSJ --commit"
 }
 
@@ -115,6 +154,7 @@ function ParseBookIds {
 
 $bookIds = @()
 $shouldCommit = $false
+$shouldRetranslateTags = $false
 $showHelp = $false
 
 for ($i = 0; $i -lt $args.Count; $i++) {
@@ -131,6 +171,9 @@ for ($i = 0; $i -lt $args.Count; $i++) {
         }
         '--commit' {
             $shouldCommit = $true
+        }
+        '--retranslate-tags' {
+            $shouldRetranslateTags = $true
         }
         '--help' {
             $showHelp = $true
@@ -157,6 +200,8 @@ foreach ($bookId in $bookIds) {
     HandleBook -bookId $bookId
     ItemPlaceholder -bookId $bookId
 }
+
+HandleGallery -retranslateTags $shouldRetranslateTags
 
 if (-not $shouldCommit) {
     Write-Host "Done. Skipped git/deploy steps (use --commit to publish)." -ForegroundColor Green

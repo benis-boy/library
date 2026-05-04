@@ -8,6 +8,7 @@ import { ConfigurationContext } from '../context/ConfigurationContext';
 import PSSJBookDashboardTile from './dashboardTiles/PSSJBookDashboardTile';
 import WtDRBookDashboardTile from './dashboardTiles/WtDRBookDashboardTile';
 import SoWBBookDashboardTile from './dashboardTiles/SoWBBookDashboardTile';
+import { GalleryDashboardTile } from './gallery/GalleryDashboardTile';
 
 export const Homepage = () => {
   const navigate = useNavigate();
@@ -39,6 +40,7 @@ export const Homepage = () => {
         <PSSJBookDashboardTile smallView={smallView} />
         <WtDRBookDashboardTile smallView={smallView} />
         <SoWBBookDashboardTile smallView={smallView} />
+        <GalleryDashboardTile />
       </div>
       <div className="flex-grow min-h-10" />
     </div>

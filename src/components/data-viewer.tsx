@@ -1,6 +1,7 @@
-import { Fragment, useContext, useEffect, useRef } from 'react';
+import { Fragment, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ConfigurationContext } from '../context/ConfigurationContext';
+import { ImageLightbox } from './gallery/ImageLightbox';
 import {
   getAccessDeniedRoute,
   getNextChapterForBook,
@@ -17,11 +18,15 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
   const { isDarkMode, selectedFont, fontSize } = useContext(ConfigurationContext);
   const lContext = useContext(LibraryContext);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [galleryMap, setGalleryMap] = useState<Record<string, { fullSrc: string }>>({});
+  const [lightboxImageId, setLightboxImageId] = useState<string | null>(null);
   const {
     libraryData: { content } = { content: '' },
     setSelectedBook,
     setSelectedChapter,
   } = lContext || {};
+
+  const baseUrl = import.meta.env.BASE_URL;
 
   useEffect(() => {
     if (!setSelectedBook || !setSelectedChapter) {
@@ -112,6 +117,87 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
     }
   }, [isDarkMode, selectedFont, fontSize]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadGalleryMap = async () => {
+      try {
+        const response = await fetch(`${baseUrl}assets/gallery/gallery.json`, { cache: 'no-store' });
+        if (!response.ok) {
+          return;
+        }
+
+        const payload = (await response.json()) as { images?: Array<{ id?: string; fullSrc?: string }> };
+        if (!Array.isArray(payload.images)) {
+          return;
+        }
+
+        const nextMap: Record<string, { fullSrc: string }> = {};
+        for (const image of payload.images) {
+          if (typeof image?.id !== 'string' || typeof image?.fullSrc !== 'string') {
+            continue;
+          }
+          nextMap[image.id] = { fullSrc: image.fullSrc };
+        }
+
+        if (!cancelled) {
+          setGalleryMap(nextMap);
+        }
+      } catch {
+        if (!cancelled) {
+          setGalleryMap({});
+        }
+      }
+    };
+
+    void loadGalleryMap();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [baseUrl]);
+
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      const isTrustedOrigin =
+        event.origin.startsWith('https://benis-boy.github.io') ||
+        event.origin.startsWith('http://localhost:') ||
+        event.origin.startsWith('http://127.0.0.1:');
+      if (!isTrustedOrigin) {
+        return;
+      }
+
+      if (event.data?.type !== 'chapter-image-clicked') {
+        return;
+      }
+
+      const imageId = event.data?.imageId;
+      if (typeof imageId !== 'string' || !galleryMap[imageId]) {
+        return;
+      }
+
+      setLightboxImageId(imageId);
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => {
+      window.removeEventListener('message', handleMessage);
+    };
+  }, [galleryMap]);
+
+  const selectedLightboxImageSrc = useMemo(() => {
+    if (!lightboxImageId) {
+      return '';
+    }
+
+    const image = galleryMap[lightboxImageId];
+    if (!image) {
+      return '';
+    }
+
+    return `${baseUrl}${image.fullSrc.replace(/^\/+/, '')}`;
+  }, [baseUrl, galleryMap, lightboxImageId]);
+
   if (!lContext) return <Fragment />;
 
   return (
@@ -162,6 +248,13 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
           Next Chapter
         </button>
       </div>
+
+      <ImageLightbox
+        open={Boolean(lightboxImageId && selectedLightboxImageSrc)}
+        imageSrc={selectedLightboxImageSrc}
+        imageAlt={lightboxImageId ? `Chapter image ${lightboxImageId}` : 'Chapter image'}
+        onClose={() => setLightboxImageId(null)}
+      />
     </>
   );
 };
@@ -198,8 +291,70 @@ const injectStyles = (
           text-align: justify;
           padding: 0.5em 10px;
         }
+
+        .chapter-image-trigger {
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          width: fit-content;
+          max-width: calc(100% - 20px);
+          margin: 16px auto;
+          min-height: 44px;
+          padding: 8px;
+          border: 1px solid ${isDarkMode ? '#4a596f' : '#a5b4c5'};
+          border-radius: 10px;
+          background: ${isDarkMode ? '#1b2a41' : '#eef2f7'};
+          color: ${isDarkMode ? '#f5f7fa' : '#1f2937'};
+          font-family: ${selectedFont};
+          font-size: ${Math.max(14, fontSize - 1)}px;
+          text-align: left;
+          cursor: pointer;
+          overflow: hidden;
+        }
+
+        .chapter-image-trigger img {
+          display: block;
+          width: auto;
+          max-width: min(100%, 320px);
+          max-height: 320px;
+          height: auto;
+          object-fit: contain;
+        }
+
+        .chapter-image-trigger:hover {
+          filter: brightness(1.05);
+        }
+
+        .chapter-image-trigger:focus {
+          outline: 2px solid ${isDarkMode ? '#93c5fd' : '#1d4ed8'};
+          outline-offset: 2px;
+        }
       `;
       iframeDocument.head.appendChild(styleElement); // Append styles to the head of the iframe's document
+
+      const scriptElement = iframeDocument.createElement('script');
+      scriptElement.innerHTML = `
+        document.addEventListener('click', function(event) {
+          const target = event.target;
+          if (!(target instanceof Element)) {
+            return;
+          }
+
+          const trigger = target.closest('.chapter-image-trigger');
+          if (!trigger) {
+            return;
+          }
+
+          event.preventDefault();
+          const imageId = trigger.getAttribute('data-image-id');
+          if (!imageId) {
+            return;
+          }
+
+          window.parent.postMessage({ type: 'chapter-image-clicked', imageId: imageId }, '*');
+        });
+      `;
+      iframeDocument.head.appendChild(scriptElement);
     }
   }
 };

@@ -14,6 +14,10 @@
 - `npm run deploy` - publishes `dist/` with `gh-pages` (runs `predeploy` -> `npm run build`).
 - There is no root test script.
 
+## Agent context guardrails
+- Do not read `.png` files unless explicitly required for the task; image files can consume too much context and hurt task performance.
+- Never stage changes on your own (`git add`, `git add -A`, `git add .`). Only stage files when the user explicitly requests it.
+
 ## Tooling quirks that matter
 - ESLint source of truth is `eslint.config.js` (flat config, TS files only); `.eslintrc.json` is legacy.
 - Routing uses `HashRouter` for GitHub Pages compatibility (`/library/#/...`), so avoid history-mode assumptions.
@@ -43,7 +47,7 @@
 - `deployment/generate_metadata.py` generates `book-data/<BookId>_chapters.json` with ordered chapter entries (`chapter`, `title`, `isSecured`, optional `volume`).
 - `deployment/update_navigation.py` generates `book-data/<BookId>_navigation.html` from chapter metadata.
 - `deployment/update_wordcount.py` updates `src/basicBookData.json` word counts/dates.
-- `deployment/encryptExport.py` reads `book-data/encrypted_files.md`, encrypts selected files, and uses secrets in `deployment/secret.txt`, `deployment/WtDR_secret.txt`, `deployment/SoWB_secret.txt`.
+- `deployment/encryptExport.py` reads `deployment/encrypted_files.md`, encrypts selected files, and uses secrets in `deployment/secret.txt`, `deployment/WtDR_secret.txt`, `deployment/SoWB_secret.txt`.
 - Shared encryption rule parsing for modular scripts lives in `deployment/encryption_rules.py`.
 - Legacy `deployment/modifyExport.py` is intentionally kept untouched for parity checks and is not called by current pipeline.
 - Frontend reader logic consumes `public/navigation-data/<BookId>_chapters.json`; ensure this file exists for every supported book ID.

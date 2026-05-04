@@ -1,21 +1,30 @@
 import { Box } from '@mui/material';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import { DataViewer } from './components/data-viewer';
+import { GalleryNavigator } from './components/gallery/GalleryNavigator';
+import { GalleryTagOption } from './components/gallery/tagUtils';
 import WebsiteHeader from './components/header';
 import { Navigator } from './components/navigator';
-import { ConfigurationView } from './components/ConfigurationView';
-import EndOfBookMessage from './components/endOfBook';
-import { Homepage } from './components/homepage';
-import PatreonMessage from './components/notASupporter';
-import AccessRestrictedMessage from './components/notLoggedIn';
+import { ConfigurationProvider } from './context/ConfigurationProvider';
 import { DEFAULT_BOOK, getReaderRoute } from './context/LibraryContext';
 import { LibraryProvider } from './context/LibraryProvider';
 import { PatreonProvider } from './context/PatreonProvider';
-import { ConfigurationProvider } from './context/ConfigurationProvider';
+
+const Homepage = lazy(() => import('./components/homepage').then((module) => ({ default: module.Homepage })));
+const GalleryPage = lazy(() =>
+  import('./components/gallery/GalleryPage').then((module) => ({ default: module.GalleryPage }))
+);
+const ConfigurationView = lazy(() =>
+  import('./components/ConfigurationView').then((module) => ({ default: module.ConfigurationView }))
+);
+const DataViewer = lazy(() => import('./components/data-viewer').then((module) => ({ default: module.DataViewer })));
+const EndOfBookMessage = lazy(() => import('./components/endOfBook'));
+const AccessRestrictedMessage = lazy(() => import('./components/notLoggedIn'));
+const PatreonMessage = lazy(() => import('./components/notASupporter'));
 
 const ROUTE_PATHS = {
   home: '/',
+  gallery: '/gallery',
   settings: '/settings',
   readerBookChapter: '/reader/:bookId/:chapter',
   readerBook: '/reader/:bookId',
@@ -29,10 +38,12 @@ const ROUTE_PATHS = {
 function InnerApp() {
   const location = useLocation();
   const isReaderRoute = location.pathname.startsWith('/reader/');
+  const isGalleryRoute = location.pathname === ROUTE_PATHS.gallery;
   const [isHeaderVisible, setIsHeaderVisible] = useState(true);
   const [isNavigatorVisible, setIsNavigatorVisible] = useState(
     () => !('ontouchstart' in window || navigator.maxTouchPoints > 0)
   );
+  const [galleryTagOptions, setGalleryTagOptions] = useState<GalleryTagOption[]>([]);
 
   const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 
@@ -80,12 +91,22 @@ function InnerApp() {
         setIsHeaderVisible={setIsHeaderVisible}
         ref={headerRef}
       />
-      <Navigator
-        open={isNavigatorVisible}
-        setOpen={setIsNavigatorVisible}
-        ref={drawerRef}
-        isHeaderVisible={isHeaderVisible}
-      />
+      {isGalleryRoute ? (
+        <GalleryNavigator
+          open={isNavigatorVisible}
+          setOpen={setIsNavigatorVisible}
+          ref={drawerRef}
+          isHeaderVisible={isHeaderVisible}
+          tagOptions={galleryTagOptions}
+        />
+      ) : (
+        <Navigator
+          open={isNavigatorVisible}
+          setOpen={setIsNavigatorVisible}
+          ref={drawerRef}
+          isHeaderVisible={isHeaderVisible}
+        />
+      )}
       <Box
         ref={scrollerRef}
         sx={{
@@ -96,17 +117,20 @@ function InnerApp() {
         className={`duration-300 flex flex-col overflow-auto ${isHeaderVisible ? 'max-h-[calc(100vh-60px)] lg:max-h-[calc(100vh-50px)] portrait:max-h-[calc(100vh-80px)] min-h-[calc(100vh-60px)] lg:min-h-[calc(100vh-50px)] portrait:min-h-[calc(100vh-80px)]' : 'max-h-[100vh] min-h-[100vh]'}`}
         onScroll={handleScroll}
       >
-        <Routes>
-          <Route path={ROUTE_PATHS.home} element={<Homepage />} />
-          <Route path={ROUTE_PATHS.settings} element={<ConfigurationView />} />
-          <Route path={ROUTE_PATHS.readerBookChapter} element={<DataViewer scrollerRef={scrollerRef} />} />
-          <Route path={ROUTE_PATHS.readerBook} element={<DataViewer scrollerRef={scrollerRef} />} />
-          <Route path="/reader" element={<Navigate to={getReaderRoute(DEFAULT_BOOK)} replace />} />
-          <Route path={ROUTE_PATHS.readerEnd} element={<EndOfBookMessage />} />
-          <Route path={ROUTE_PATHS.loginRequired} element={<AccessRestrictedMessage />} />
-          <Route path={ROUTE_PATHS.supporterRequired} element={<PatreonMessage />} />
-          <Route path="*" element={<Navigate to={ROUTE_PATHS.home} replace />} />
-        </Routes>
+        <Suspense fallback={null}>
+          <Routes>
+            <Route path={ROUTE_PATHS.home} element={<Homepage />} />
+            <Route path={ROUTE_PATHS.gallery} element={<GalleryPage onTagOptionsChange={setGalleryTagOptions} />} />
+            <Route path={ROUTE_PATHS.settings} element={<ConfigurationView />} />
+            <Route path={ROUTE_PATHS.readerBookChapter} element={<DataViewer scrollerRef={scrollerRef} />} />
+            <Route path={ROUTE_PATHS.readerBook} element={<DataViewer scrollerRef={scrollerRef} />} />
+            <Route path="/reader" element={<Navigate to={getReaderRoute(DEFAULT_BOOK)} replace />} />
+            <Route path={ROUTE_PATHS.readerEnd} element={<EndOfBookMessage />} />
+            <Route path={ROUTE_PATHS.loginRequired} element={<AccessRestrictedMessage />} />
+            <Route path={ROUTE_PATHS.supporterRequired} element={<PatreonMessage />} />
+            <Route path="*" element={<Navigate to={ROUTE_PATHS.home} replace />} />
+          </Routes>
+        </Suspense>
       </Box>
     </div>
   );

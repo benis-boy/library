@@ -1,6 +1,6 @@
 import InfoText from './StyledComponents';
 
-export const amazonDomains: Record<string, string> = {
+const amazonDomains: Record<string, string> = {
   US: 'amazon.com',
   GB: 'amazon.co.uk',
   DE: 'amazon.de',
@@ -12,7 +12,7 @@ export const amazonDomains: Record<string, string> = {
   IN: 'amazon.in',
 };
 
-export function getAmazonDomain(locale: string): string {
+const getAmazonDomain = (locale: string): string => {
   const parts = locale.split('-');
   const lang = parts[0]?.toUpperCase(); // e.g. "DE" from "de"
   const region = parts[1]?.toUpperCase(); // e.g. "US" from "en-US"
@@ -22,12 +22,23 @@ export function getAmazonDomain(locale: string): string {
     amazonDomains[lang] || // fallback to language
     'amazon.com' // default
   );
-}
+};
 
-export function AmazonBuyButton({ asin }: { asin: string }) {
+type AmazonButtonProps = {
+  asin: string;
+};
+
+type AmazonLinkButtonProps = {
+  asin: string;
+  ctaLabel: string;
+  infoLabel: string;
+};
+
+const AmazonLinkButton = ({ asin, ctaLabel, infoLabel }: AmazonLinkButtonProps) => {
   const locale = Intl.DateTimeFormat().resolvedOptions().locale || 'en-US';
   const domain = getAmazonDomain(locale);
   const href = `https://assoc-redirect.amazon.com/g/r/https://${domain}/dp/${asin}`;
+
   return (
     <div>
       <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
@@ -46,10 +57,22 @@ export function AmazonBuyButton({ asin }: { asin: string }) {
           boxShadow: '0 2px 5px rgba(0,0,0,0.2)',
         }}
       >
-        <i className="fab fa-amazon pt-1.5" /> {/* or your SVG/icon */}
-        Buy it on {domain}
+        <i className="fab fa-amazon pt-1.5" />
+        {ctaLabel} {domain}
       </a>
-      <InfoText>Please ensure the domain is correct 😊</InfoText>
+      <InfoText>{infoLabel}</InfoText>
     </div>
+  );
+};
+
+export function AmazonBuyButton({ asin }: AmazonButtonProps) {
+  return (
+    <AmazonLinkButton asin={asin} ctaLabel="Buy it on" infoLabel="Please ensure the domain is correct 😊" />
+  );
+}
+
+export function ExclusiveAmazonButton({ asin }: AmazonButtonProps) {
+  return (
+    <AmazonLinkButton asin={asin} ctaLabel="Exclusive on" infoLabel="Until 19 May 2026" />
   );
 }
