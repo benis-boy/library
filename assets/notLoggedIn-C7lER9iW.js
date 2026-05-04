@@ -1,0 +1,1 @@
+import{j as e}from"./index-DlsU2LKn.js";const t=()=>e.jsxs("div",{className:"p-5 font-sans ",children:[e.jsx("h1",{className:"text-2xl mb-2",children:"Access Restricted"}),e.jsx("p",{className:"text-lg leading-relaxed",children:"You need to log in to view this content. Please log in or create an account to continue."})]});export{t as default};
