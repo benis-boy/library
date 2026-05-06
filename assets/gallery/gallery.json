@@ -221,6 +221,11 @@
       ]
     }
   ],
+  "dashboardTileImageIds": [
+    "b8411c21",
+    "49245dbf",
+    "3d4ef463"
+  ],
   "tagTranslations": {
     "a:benisboy14": "BenisBoy14",
     "a:skeleion": "Skeleion",
