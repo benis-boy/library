@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -39,6 +40,10 @@ def parse_cli_args() -> argparse.Namespace:
         '--retranslate-tags',
         action='store_true',
         help='Regenerate all in-use tag translations through the configured LLM model.',
+    )
+    parser.add_argument(
+        '--review-session-output',
+        help='Write strict review session metadata for newly generated images to this JSON path.',
     )
     return parser.parse_args()
 
@@ -97,6 +102,16 @@ def write_gallery(path: Path, payload: dict[str, Any]):
     with path.open('w', encoding='utf-8') as f:
         json.dump(payload, f, indent=2, ensure_ascii=False)
         f.write('\n')
+
+
+def write_json_atomic(path: Path, payload: dict[str, Any]):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile('w', encoding='utf-8', delete=False, dir=path.parent) as tmp:
+        json.dump(payload, tmp, indent=2, ensure_ascii=False)
+        tmp.write('\n')
+        tmp_path = Path(tmp.name)
+
+    tmp_path.replace(path)
 
 
 def format_utc_timestamp(value: datetime) -> str:
@@ -530,6 +545,42 @@ def sort_images_by_entry_added(images: list[dict[str, Any]]):
     images.sort(key=_sort_key)
 
 
+def ordered_unique_generated_ids(generated_entries: list[dict[str, str]], merged_images: list[dict[str, Any]]) -> list[str]:
+    merged_ids = {
+        image_id
+        for image in merged_images
+        for image_id in [image.get('id')]
+        if isinstance(image_id, str) and image_id
+    }
+
+    ordered_unique_ids: list[str] = []
+    seen: set[str] = set()
+    for generated in generated_entries:
+        image_id = generated.get('id')
+        if not isinstance(image_id, str) or not image_id:
+            continue
+        if image_id in seen:
+            continue
+        if image_id not in merged_ids:
+            continue
+
+        seen.add(image_id)
+        ordered_unique_ids.append(image_id)
+
+    return ordered_unique_ids
+
+
+def write_review_session(path: Path, new_image_ids: list[str]):
+    payload = {
+        'version': 1,
+        'status': 'pending',
+        'strictTagReview': True,
+        'createdAt': format_utc_timestamp(datetime.now(timezone.utc)),
+        'newImageIds': new_image_ids,
+    }
+    write_json_atomic(path, payload)
+
+
 def merge_with_base(base_images: list[Any], generated_entries: list[dict[str, str]]) -> list[dict[str, Any]]:
     entries_by_id: dict[str, dict[str, Any]] = {}
     ordered_ids: list[str] = []
@@ -622,7 +673,7 @@ def process_source_images(used_ids: set[str]) -> tuple[list[dict[str, str]], int
     return generated_entries, deleted_source_count
 
 
-def main(retranslate_tags: bool):
+def main(retranslate_tags: bool, review_session_output: Optional[Path]):
     if not FULL_DIR.exists():
         print(f'Missing directory: {FULL_DIR}')
         raise SystemExit(1)
@@ -639,6 +690,7 @@ def main(retranslate_tags: bool):
 
     generated_entries, deleted_source_count = process_source_images(used_ids)
     merged_images = merge_with_base(migrated_base_images, generated_entries)
+    new_image_ids = ordered_unique_generated_ids(generated_entries, merged_images)
     (
         tag_translations,
         missing_translation_count,
@@ -653,6 +705,11 @@ def main(retranslate_tags: bool):
     }
     write_gallery(GALLERY_JSON_PATH, output_payload)
 
+    if review_session_output is not None:
+        write_review_session(review_session_output, new_image_ids)
+        print(f'Wrote strict review session: {review_session_output}')
+        print(f'New images pending strict review: {len(new_image_ids)}')
+
     print(f'Updated gallery manifest: {GALLERY_JSON_PATH}')
     print(f'Images in manifest: {len(merged_images)}')
     print(f'Existing IDs remapped: {remapped_entry_count}')
@@ -665,7 +722,8 @@ def main(retranslate_tags: bool):
 if __name__ == '__main__':
     try:
         cli_args = parse_cli_args()
-        main(retranslate_tags=cli_args.retranslate_tags)
+        review_session_output = Path(cli_args.review_session_output) if cli_args.review_session_output else None
+        main(retranslate_tags=cli_args.retranslate_tags, review_session_output=review_session_output)
     except Exception as exc:
         print(f'Gallery generation failed: {exc}')
         raise SystemExit(1)

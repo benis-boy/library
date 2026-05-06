@@ -12,6 +12,167 @@ function InvokePythonStep {
     }
 }
 
+function ReadJsonFile {
+    param(
+        [string]$path,
+        [string]$description
+    )
+
+    if (-not (Test-Path -LiteralPath $path)) {
+        Write-Host "Missing $description at $path" -ForegroundColor Red
+        return $null
+    }
+
+    try {
+        $raw = Get-Content -LiteralPath $path -Raw
+        if ([string]::IsNullOrWhiteSpace($raw)) {
+            Write-Host "$description at $path is empty" -ForegroundColor Red
+            return $null
+        }
+
+        return $raw | ConvertFrom-Json
+    }
+    catch {
+        Write-Host "Failed to parse $description at $path" -ForegroundColor Red
+        Write-Host $_.Exception.Message -ForegroundColor Red
+        return $null
+    }
+}
+
+function WaitForGalleryAdminServer {
+    param(
+        [int]$processId,
+        [int]$timeoutSeconds = 30
+    )
+
+    $uri = 'http://127.0.0.1:8765/api/context'
+    $deadline = (Get-Date).AddSeconds($timeoutSeconds)
+
+    while ((Get-Date) -lt $deadline) {
+        try {
+            Invoke-WebRequest -Uri $uri -UseBasicParsing -TimeoutSec 2 | Out-Null
+            return $true
+        }
+        catch {
+            # keep waiting
+        }
+
+        if (-not (Get-Process -Id $processId -ErrorAction SilentlyContinue)) {
+            Write-Host 'Gallery tag admin exited before becoming ready.' -ForegroundColor Red
+            return $false
+        }
+
+        Start-Sleep -Milliseconds 500
+    }
+
+    Write-Host 'Timed out waiting for gallery tag admin to start.' -ForegroundColor Red
+    return $false
+}
+
+function StopProcessIfRunning {
+    param(
+        [System.Diagnostics.Process]$process,
+        [int]$graceSeconds = 6
+    )
+
+    if ($null -eq $process) {
+        return
+    }
+
+    if (-not (Get-Process -Id $process.Id -ErrorAction SilentlyContinue)) {
+        return
+    }
+
+    try {
+        Wait-Process -Id $process.Id -Timeout $graceSeconds -ErrorAction SilentlyContinue
+    }
+    catch {
+        # best effort
+    }
+
+    if (Get-Process -Id $process.Id -ErrorAction SilentlyContinue) {
+        Stop-Process -Id $process.Id -Force
+    }
+}
+
+function RunStrictGalleryReview {
+    param(
+        [string]$reviewSessionPath,
+        [int]$approvalTimeoutMinutes = 120
+    )
+
+    $session = ReadJsonFile -path $reviewSessionPath -description 'strict gallery review session'
+    if ($null -eq $session) {
+        return $false
+    }
+
+    $newImageIds = @($session.newImageIds | Where-Object { $_ -is [string] -and -not [string]::IsNullOrWhiteSpace($_) })
+    if ($newImageIds.Count -eq 0) {
+        Write-Host 'No newly generated gallery images found. Skipping strict gallery review.' -ForegroundColor Green
+        return $true
+    }
+
+    Write-Host "Strict gallery review required for $($newImageIds.Count) new image(s)." -ForegroundColor Yellow
+    Write-Host "Launching gallery tag admin in review mode..." -ForegroundColor Cyan
+
+    $adminArguments = @(
+        '.\dev-tools\gallery_tag_admin.py',
+        '--review-session',
+        $reviewSessionPath
+    )
+
+    $adminProcess = $null
+    try {
+        $adminProcess = Start-Process -FilePath 'python' -ArgumentList $adminArguments -PassThru -WindowStyle Hidden
+    }
+    catch {
+        Write-Host 'Failed to start gallery tag admin.' -ForegroundColor Red
+        Write-Host $_.Exception.Message -ForegroundColor Red
+        return $false
+    }
+
+    $approved = $false
+    try {
+        if (-not (WaitForGalleryAdminServer -processId $adminProcess.Id)) {
+            return $false
+        }
+
+        Start-Process 'http://127.0.0.1:8765/' | Out-Null
+        Write-Host "Tag each new image, then press 'Approve review' in the admin app." -ForegroundColor Cyan
+
+        $deadline = (Get-Date).AddMinutes($approvalTimeoutMinutes)
+        while ((Get-Date) -lt $deadline) {
+            $currentSession = ReadJsonFile -path $reviewSessionPath -description 'strict gallery review session'
+            if ($null -eq $currentSession) {
+                return $false
+            }
+
+            if ($currentSession.status -eq 'approved') {
+                $approved = $true
+                break
+            }
+
+            if (-not (Get-Process -Id $adminProcess.Id -ErrorAction SilentlyContinue)) {
+                Write-Host 'Gallery tag admin exited before review approval.' -ForegroundColor Red
+                return $false
+            }
+
+            Start-Sleep -Seconds 1
+        }
+
+        if (-not $approved) {
+            Write-Host "Timed out waiting for strict gallery review approval after $approvalTimeoutMinutes minutes." -ForegroundColor Red
+            return $false
+        }
+
+        Write-Host 'Strict gallery review approved.' -ForegroundColor Green
+        return $true
+    }
+    finally {
+        StopProcessIfRunning -process $adminProcess
+    }
+}
+
 function MoveBookArtifactsToRaw {
     param (
         [string]$bookId
@@ -120,7 +281,8 @@ function ItemPlaceholder {
 
 function HandleGallery {
     param(
-        [bool]$retranslateTags = $false
+        [bool]$retranslateTags = $false,
+        [string]$reviewSessionOutputPath = ''
     )
 
     $arguments = @(
@@ -129,6 +291,11 @@ function HandleGallery {
 
     if ($retranslateTags) {
         $arguments += '--retranslate-tags'
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($reviewSessionOutputPath)) {
+        $arguments += '--review-session-output'
+        $arguments += $reviewSessionOutputPath
     }
 
     InvokePythonStep -description "Generating gallery assets + manifest" -arguments $arguments
@@ -143,6 +310,9 @@ function ShowUsage {
     Write-Host "  .\pipeline.ps1 --book PSSJ --book WtDR"
     Write-Host "  .\pipeline.ps1 --retranslate-tags"
     Write-Host "  .\pipeline.ps1 --book PSSJ --commit"
+    Write-Host ""
+    Write-Host "Note:" -ForegroundColor Cyan
+    Write-Host "  Strict gallery review runs automatically when new gallery images are generated."
 }
 
 function ParseBookIds {
@@ -201,7 +371,15 @@ foreach ($bookId in $bookIds) {
     ItemPlaceholder -bookId $bookId
 }
 
-HandleGallery -retranslateTags $shouldRetranslateTags
+$galleryReviewSessionPath = Join-Path ([System.IO.Path]::GetTempPath()) ("gallery-review-" + [Guid]::NewGuid().ToString('N') + '.json')
+
+HandleGallery -retranslateTags $shouldRetranslateTags -reviewSessionOutputPath $galleryReviewSessionPath
+
+$reviewCompleted = RunStrictGalleryReview -reviewSessionPath $galleryReviewSessionPath
+if (-not $reviewCompleted) {
+    Write-Host 'Strict gallery review failed. Exiting...' -ForegroundColor Red
+    exit 1
+}
 
 if (-not $shouldCommit) {
     Write-Host "Done. Skipped git/deploy steps (use --commit to publish)." -ForegroundColor Green
