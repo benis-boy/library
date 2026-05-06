@@ -24,6 +24,7 @@ THUMB_BOUNDS_PORTRAIT = (360, 640)
 ID_LENGTH = 8
 ENTRY_ADDED_FIELD = 'entryAddedAt'
 TAG_TRANSLATIONS_FIELD = 'tagTranslations'
+DASHBOARD_TILE_IMAGE_IDS_FIELD = 'dashboardTileImageIds'
 EPOCH_UTC = datetime(1970, 1, 1, tzinfo=timezone.utc)
 TAG_VALUE_PATTERN = re.compile(r'^[a-z0-9][a-z0-9_-]*$')
 ALLOWED_PREFIXES = ('c:', 's:', 'a:')
@@ -169,6 +170,27 @@ def normalize_tags(raw_tags: Any) -> list[str]:
 
         seen.add(tag)
         normalized.append(tag)
+
+    return normalized
+
+
+def normalize_dashboard_tile_image_ids(raw_ids: Any) -> list[str]:
+    if not isinstance(raw_ids, list):
+        return []
+
+    normalized: list[str] = []
+    seen: set[str] = set()
+
+    for raw_id in raw_ids:
+        if not isinstance(raw_id, str):
+            continue
+
+        image_id = raw_id.strip()
+        if not image_id or image_id in seen:
+            continue
+
+        seen.add(image_id)
+        normalized.append(image_id)
 
     return normalized
 
@@ -684,6 +706,9 @@ def main(retranslate_tags: bool, review_session_output: Optional[Path]):
     base_images = gallery_payload.get('images', [])
     if not isinstance(base_images, list):
         base_images = []
+    existing_dashboard_tile_image_ids = normalize_dashboard_tile_image_ids(
+        gallery_payload.get(DASHBOARD_TILE_IMAGE_IDS_FIELD)
+    )
     existing_tag_translations = normalize_tag_translations(gallery_payload.get(TAG_TRANSLATIONS_FIELD))
 
     migrated_base_images, used_ids, remapped_entry_count = migrate_base_entries_to_short_ids(base_images)
@@ -701,6 +726,7 @@ def main(retranslate_tags: bool, review_session_output: Optional[Path]):
     output_payload = {
         'version': gallery_payload.get('version', 1),
         'images': merged_images,
+        DASHBOARD_TILE_IMAGE_IDS_FIELD: existing_dashboard_tile_image_ids,
         TAG_TRANSLATIONS_FIELD: tag_translations,
     }
     write_gallery(GALLERY_JSON_PATH, output_payload)

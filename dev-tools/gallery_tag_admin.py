@@ -254,6 +254,27 @@ def normalize_tags(raw_tags):
     return normalized
 
 
+def normalize_dashboard_tile_image_ids(raw_ids):
+    if not isinstance(raw_ids, list):
+        return []
+
+    normalized = []
+    seen = set()
+
+    for raw_id in raw_ids:
+        if not isinstance(raw_id, str):
+            continue
+
+        image_id = raw_id.strip()
+        if not image_id or image_id in seen:
+            continue
+
+        seen.add(image_id)
+        normalized.append(image_id)
+
+    return normalized
+
+
 def normalize_tag_translations(raw_translations):
     if not isinstance(raw_translations, dict):
         return {}
@@ -288,6 +309,7 @@ def normalize_gallery_payload(payload):
     if not isinstance(raw_images, list):
         raw_images = []
 
+    normalized_dashboard_tile_image_ids = normalize_dashboard_tile_image_ids(payload.get('dashboardTileImageIds'))
     normalized_tag_translations = normalize_tag_translations(payload.get('tagTranslations'))
 
     normalized_images = []
@@ -322,6 +344,7 @@ def normalize_gallery_payload(payload):
     return {
         'version': version,
         'images': normalized_images,
+        'dashboardTileImageIds': normalized_dashboard_tile_image_ids,
         'tagTranslations': normalized_tag_translations,
     }
 
@@ -1088,6 +1111,7 @@ def build_admin_html():
         throw new Error('Failed to load gallery data');
       }
       state.payload = await res.json();
+      state.payload.dashboardTileImageIds = normalizeImageIds(state.payload.dashboardTileImageIds);
       state.payload.tagTranslations = normalizeTagTranslations(state.payload.tagTranslations);
       for (const img of state.payload.images || []) {
         img.tags = uniqTags(img.tags || []);
@@ -1107,6 +1131,7 @@ def build_admin_html():
       if (!state.payload) return;
       const payload = {
         version: Number.isInteger(state.payload.version) ? state.payload.version : 1,
+        dashboardTileImageIds: normalizeImageIds(state.payload.dashboardTileImageIds),
         tagTranslations: normalizeTagTranslations(state.payload.tagTranslations),
         images: (state.payload.images || []).map((img) => ({
           id: img.id,

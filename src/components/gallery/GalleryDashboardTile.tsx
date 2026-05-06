@@ -8,6 +8,11 @@ type GalleryImage = {
   entryAddedAt?: string;
 };
 
+type GalleryManifest = {
+  images?: GalleryImage[];
+  dashboardTileImageIds?: string[];
+};
+
 const BASE_URL = import.meta.env.BASE_URL;
 const FIRST_LEFT = 50;
 const FIRST_RIGHT = 40;
@@ -28,6 +33,65 @@ const toTimestamp = (value?: string) => {
 
   const parsed = Date.parse(value);
   return Number.isNaN(parsed) ? 0 : parsed;
+};
+
+const getRecentPreviewSources = (images: GalleryImage[]) => {
+  return images
+    .map((image, index) => ({ image, index }))
+    .filter(({ image }) => typeof image.thumbSrc === 'string')
+    .sort((left, right) => {
+      const timestampDelta = toTimestamp(right.image.entryAddedAt) - toTimestamp(left.image.entryAddedAt);
+      if (timestampDelta !== 0) {
+        return timestampDelta;
+      }
+
+      return right.index - left.index;
+    })
+    .slice(0, 3)
+    .map(({ image }) => toPublicAssetPath(image.thumbSrc as string));
+};
+
+const getConfiguredPreviewSources = (images: GalleryImage[], configuredIds: unknown) => {
+  if (!Array.isArray(configuredIds)) {
+    return [];
+  }
+
+  const thumbSourceById = new Map<string, string>();
+  for (const image of images) {
+    if (typeof image.id !== 'string' || typeof image.thumbSrc !== 'string') {
+      continue;
+    }
+
+    if (!thumbSourceById.has(image.id)) {
+      thumbSourceById.set(image.id, image.thumbSrc);
+    }
+  }
+
+  const sources: string[] = [];
+  const seenIds = new Set<string>();
+  for (const rawId of configuredIds) {
+    if (typeof rawId !== 'string') {
+      continue;
+    }
+
+    const imageId = rawId.trim();
+    if (!imageId || seenIds.has(imageId)) {
+      continue;
+    }
+
+    seenIds.add(imageId);
+    const thumbSrc = thumbSourceById.get(imageId);
+    if (!thumbSrc) {
+      continue;
+    }
+
+    sources.push(toPublicAssetPath(thumbSrc));
+    if (sources.length >= 3) {
+      break;
+    }
+  }
+
+  return sources;
 };
 
 const FALLBACK_BACKGROUND = 'linear-gradient(160deg, rgba(95,15,64,1) 0%, rgba(154,3,30,1) 58%, rgba(251,139,36,1) 100%)';
@@ -75,27 +139,16 @@ export const GalleryDashboardTile = () => {
           return;
         }
 
-        const payload = (await response.json()) as { images?: GalleryImage[] };
+        const payload = (await response.json()) as GalleryManifest;
         if (!Array.isArray(payload.images)) {
           return;
         }
 
-        const sorted = payload.images
-          .map((image, index) => ({ image, index }))
-          .filter(({ image }) => typeof image.thumbSrc === 'string')
-          .sort((left, right) => {
-            const timestampDelta = toTimestamp(right.image.entryAddedAt) - toTimestamp(left.image.entryAddedAt);
-            if (timestampDelta !== 0) {
-              return timestampDelta;
-            }
-
-            return right.index - left.index;
-          })
-          .slice(0, 3)
-          .map(({ image }) => toPublicAssetPath(image.thumbSrc as string));
+        const configuredSources = getConfiguredPreviewSources(payload.images, payload.dashboardTileImageIds);
+        const previewSources = configuredSources.length > 0 ? configuredSources : getRecentPreviewSources(payload.images);
 
         if (!cancelled) {
-          setGalleryPreviewSources(sorted);
+          setGalleryPreviewSources(previewSources);
         }
       } catch {
         if (!cancelled) {
