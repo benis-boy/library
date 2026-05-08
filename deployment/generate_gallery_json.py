@@ -475,8 +475,11 @@ def make_unique_short_id(seed: str, used_ids: set[str]) -> str:
         counter += 1
 
 
-def save_webp(image: Image.Image, path: Path):
-    image.save(path, format='WEBP', quality=90, method=6)
+def save_webp(image: Image.Image, path: Path, *, lossless: bool = False):
+    save_kwargs = {'format': 'WEBP', 'method': 6, 'lossless': lossless}
+    if not lossless:
+        save_kwargs['quality'] = 90
+    image.save(path, **save_kwargs)
 
 
 def build_entry(image_id: str, entry_added_at: Optional[str] = None) -> dict[str, Any]:
@@ -675,7 +678,7 @@ def process_source_images(used_ids: set[str]) -> tuple[list[dict[str, str]], int
         full_target = FULL_DIR / f'{image_id}.webp'
         thumb_target = THUMB_DIR / f'{image_id}.webp'
 
-        save_webp(normalized, full_target)
+        save_webp(normalized, full_target, lossless=True)
 
         thumb_bounds = pick_orientation_bounds(normalized, THUMB_BOUNDS_LANDSCAPE, THUMB_BOUNDS_PORTRAIT)
         thumb_image = fit_inside_bounds(normalized, thumb_bounds)
