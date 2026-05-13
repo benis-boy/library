@@ -8,6 +8,7 @@ import {
   getReaderRoute,
   getStoredChapterSelection,
   LibraryContext,
+  normalizeChapterPath,
   normalizeRouteBookId,
   parseReaderRoute,
 } from '../context/LibraryContext';
@@ -21,7 +22,7 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
   const [galleryMap, setGalleryMap] = useState<Record<string, { fullSrc: string }>>({});
   const [lightboxImageId, setLightboxImageId] = useState<string | null>(null);
   const {
-    libraryData: { content } = { content: '' },
+    libraryData: { content, selectedBook, selectedChapter } = { content: '', selectedBook: undefined, selectedChapter: undefined },
     setSelectedBook,
     setSelectedChapter,
   } = lContext || {};
@@ -42,15 +43,37 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
     const routeInfo = parseReaderRoute(params.bookId, params.chapter);
 
     if (!routeInfo) {
-      const stored = getStoredChapterSelection(routeBook);
-      if (stored) {
+      const activeChapter =
+        (selectedBook === routeBook ? normalizeChapterPath(selectedChapter) : undefined) || getStoredChapterSelection(routeBook);
+
+      if (activeChapter) {
         const currentPath = window.location.hash.replace(/^#/, '') || '/';
-        const targetPath = getReaderRoute(routeBook, stored);
+        const targetPath = getReaderRoute(routeBook, activeChapter);
         if (currentPath !== targetPath) {
           navigate(targetPath, { replace: true });
         }
       } else {
-        void setSelectedBook(routeBook, true);
+        void setSelectedBook(routeBook, true).then((result) => {
+          if (!result) {
+            return;
+          }
+
+          if (!result.ok) {
+            navigate(getAccessDeniedRoute(result.reason), { replace: true });
+            return;
+          }
+
+          const firstSelectedChapter = getStoredChapterSelection(routeBook);
+          if (!firstSelectedChapter) {
+            return;
+          }
+
+          const currentPath = window.location.hash.replace(/^#/, '') || '/';
+          const targetPath = getReaderRoute(routeBook, firstSelectedChapter);
+          if (currentPath !== targetPath) {
+            navigate(targetPath, { replace: true });
+          }
+        });
       }
       return;
     }
@@ -69,7 +92,7 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
         navigate(getAccessDeniedRoute(result.reason), { replace: true });
       }
     });
-  }, [content, navigate, params.bookId, params.chapter, setSelectedBook, setSelectedChapter]);
+  }, [content, navigate, params.bookId, params.chapter, selectedBook, selectedChapter, setSelectedBook, setSelectedChapter]);
 
   useEffect(() => {
     const adjustHeight = () => {
@@ -224,8 +247,11 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
 
             const routeBook = normalizeRouteBookId(params.bookId);
             const routeInfo = parseReaderRoute(params.bookId, params.chapter);
-            const book = routeInfo?.book || routeBook;
-            const currentChapter = routeInfo?.chapter || (book ? getStoredChapterSelection(book) : undefined);
+            const book = routeInfo?.book || routeBook || selectedBook;
+            const currentChapter =
+              routeInfo?.chapter ||
+              (book && selectedBook === book ? normalizeChapterPath(selectedChapter) : undefined) ||
+              (book ? getStoredChapterSelection(book) : undefined);
             if (!book || !currentChapter) {
               return;
             }
