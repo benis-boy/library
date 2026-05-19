@@ -1,6 +1,13 @@
 import CollectionsIcon from '@mui/icons-material/Collections';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import {
+  countNewGalleryImages,
+  getGalleryLastVisitedAt,
+  toPublicAssetPath,
+  toTimestamp,
+  BASE_URL,
+} from './galleryShared';
 
 type GalleryImage = {
   id?: string;
@@ -13,27 +20,14 @@ type GalleryManifest = {
   dashboardTileImageIds?: string[];
 };
 
-const BASE_URL = import.meta.env.BASE_URL;
 const FIRST_LEFT = 50;
 const FIRST_RIGHT = 40;
 const SECOND_LEFT = 35;
 const SECOND_RIGHT = 35;
 const THIRD_LEFT = 15;
 const THIRD_RIGHT = 25;
-
-const toPublicAssetPath = (source: string) => {
-  const normalized = source.trim().replace(/^\/+/, '');
-  return `${BASE_URL}${normalized}`;
-};
-
-const toTimestamp = (value?: string) => {
-  if (!value) {
-    return 0;
-  }
-
-  const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? 0 : parsed;
-};
+const liquidGlassBadgeClassName =
+  'relative inline-flex items-center justify-center overflow-hidden rounded-full border border-white/45 bg-white/[0.08] px-3 py-1 text-xs font-medium text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.72),0_0_9px_rgba(0,0,0,0.18),0_3px_8px_rgba(0,0,0,0.16)] backdrop-blur-md before:pointer-events-none before:absolute before:inset-0 before:rounded-full before:bg-gradient-to-br before:from-white/55 before:via-transparent before:to-transparent before:opacity-70 after:pointer-events-none after:absolute after:inset-0 after:rounded-full after:bg-gradient-to-tl after:from-white/20 after:via-transparent after:to-transparent after:opacity-60';
 
 const getRecentPreviewSources = (images: GalleryImage[]) => {
   return images
@@ -94,7 +88,8 @@ const getConfiguredPreviewSources = (images: GalleryImage[], configuredIds: unkn
   return sources;
 };
 
-const FALLBACK_BACKGROUND = 'linear-gradient(160deg, rgba(95,15,64,1) 0%, rgba(154,3,30,1) 58%, rgba(251,139,36,1) 100%)';
+const FALLBACK_BACKGROUND =
+  'linear-gradient(160deg, rgba(95,15,64,1) 0%, rgba(154,3,30,1) 58%, rgba(251,139,36,1) 100%)';
 
 const clampPercent = (value: number) => Math.max(0, Math.min(100, value));
 
@@ -128,6 +123,7 @@ const buildLayerStyle = (source?: string) => {
 export const GalleryDashboardTile = () => {
   const navigate = useNavigate();
   const [galleryPreviewSources, setGalleryPreviewSources] = useState<string[]>([]);
+  const [newImageCount, setNewImageCount] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -141,18 +137,25 @@ export const GalleryDashboardTile = () => {
 
         const payload = (await response.json()) as GalleryManifest;
         if (!Array.isArray(payload.images)) {
+          if (!cancelled) {
+            setNewImageCount(0);
+          }
           return;
         }
 
         const configuredSources = getConfiguredPreviewSources(payload.images, payload.dashboardTileImageIds);
-        const previewSources = configuredSources.length > 0 ? configuredSources : getRecentPreviewSources(payload.images);
+        const previewSources =
+          configuredSources.length > 0 ? configuredSources : getRecentPreviewSources(payload.images);
+        const unseenCount = countNewGalleryImages(payload.images, getGalleryLastVisitedAt());
 
         if (!cancelled) {
           setGalleryPreviewSources(previewSources);
+          setNewImageCount(unseenCount);
         }
       } catch {
         if (!cancelled) {
           setGalleryPreviewSources([]);
+          setNewImageCount(0);
         }
       }
     };
@@ -172,6 +175,8 @@ export const GalleryDashboardTile = () => {
       : galleryPreviewSources.length === 2
         ? galleryPreviewSources[1]
         : galleryPreviewSources[0];
+  const hasNewImages = newImageCount > 0;
+  const newImageBadgeLabel = newImageCount > 9 ? '9+ new' : `${newImageCount} new`;
 
   return (
     <button
@@ -209,10 +214,25 @@ export const GalleryDashboardTile = () => {
       <div className="absolute inset-0 bg-gradient-to-b from-black/28 via-black/10 to-black/70" />
       <div className="relative w-full flex flex-col min-h-[320px] sm:min-h-[384px]">
         <div className="flex items-start justify-between p-4">
-          <span className="inline-flex items-center gap-2 rounded-full bg-white/25 px-3 py-1 text-xs uppercase tracking-[0.2em]">
-            Gallery
-          </span>
-          <CollectionsIcon fontSize="large" />
+          <div className="flex flex-wrap gap-2 pr-3 text-left">
+            <span className={`${liquidGlassBadgeClassName} uppercase tracking-[0.2em]`}>
+              <span className="relative z-10">Gallery</span>
+            </span>
+            {hasNewImages ? (
+              <span className={`${liquidGlassBadgeClassName} uppercase tracking-[0.1em]`}>
+                <span className="relative z-10">{newImageBadgeLabel}</span>
+              </span>
+            ) : null}
+          </div>
+          <div className="relative shrink-0">
+            <CollectionsIcon fontSize="large" />
+            {hasNewImages ? (
+              <span className="absolute -right-1 -top-1 flex h-3.5 w-3.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-300/70" />
+                <span className="relative inline-flex h-3.5 w-3.5 rounded-full border border-white/60 bg-amber-300" />
+              </span>
+            ) : null}
+          </div>
         </div>
         <div className="flex-grow px-4 pb-4 flex flex-col justify-end text-left">
           <h2 className="font-bold text-2xl leading-tight">View All Artwork</h2>

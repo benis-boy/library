@@ -2,6 +2,7 @@ import OpenInFullIcon from '@mui/icons-material/OpenInFull';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ImageLightbox } from './ImageLightbox';
+import { BASE_URL, markGalleryAsVisited, toPublicAssetPath, toTimestamp } from './galleryShared';
 import {
   GalleryTagOption,
   normalizeGalleryTag,
@@ -29,22 +30,6 @@ const DEFAULT_MANIFEST: GalleryManifest = {
   tagTranslations: {},
 };
 
-const BASE_URL = import.meta.env.BASE_URL;
-
-const toPublicAssetPath = (source: string) => {
-  const normalized = source.trim().replace(/^\/+/, '');
-  return `${BASE_URL}${normalized}`;
-};
-
-const toTimestamp = (value?: string) => {
-  if (!value) {
-    return 0;
-  }
-
-  const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? 0 : parsed;
-};
-
 type GalleryPageProps = {
   onTagOptionsChange?: (tagOptions: GalleryTagOption[]) => void;
 };
@@ -60,6 +45,10 @@ export const GalleryPage = ({ onTagOptionsChange }: GalleryPageProps) => {
   const isFirstFilterRenderRef = useRef(true);
   const swapTimerRef = useRef<number | null>(null);
   const settleTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    markGalleryAsVisited();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;

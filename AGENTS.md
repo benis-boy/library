@@ -45,6 +45,7 @@
 - Source markdown lives in `book-data/<BookId>_export.md`.
 - `deployment/create_htmls.py` generates chapter HTML and an intermediate manifest.
 - `deployment/generate_metadata.py` generates `book-data/<BookId>_chapters.json` with ordered chapter entries (`chapter`, `title`, `isSecured`, optional `volume`).
+- In this repo, `encrypted` / `isSecured` means Patreon supporter-only paid content, not unavailable or unpublished content.
 - `deployment/update_navigation.py` generates `book-data/<BookId>_navigation.html` from chapter metadata.
 - `deployment/update_wordcount.py` updates `src/basicBookData.json` word counts/dates.
 - `deployment/encryptExport.py` reads `deployment/encrypted_files.md`, encrypts selected files, and uses secrets in `deployment/secret.txt`, `deployment/WtDR_secret.txt`, `deployment/SoWB_secret.txt`.

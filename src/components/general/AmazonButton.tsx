@@ -70,9 +70,3 @@ export function AmazonBuyButton({ asin }: AmazonButtonProps) {
     <AmazonLinkButton asin={asin} ctaLabel="Buy it on" infoLabel="Please ensure the domain is correct 😊" />
   );
 }
-
-export function ExclusiveAmazonButton({ asin }: AmazonButtonProps) {
-  return (
-    <AmazonLinkButton asin={asin} ctaLabel="Exclusive on" infoLabel="Until 19 May 2026" />
-  );
-}
