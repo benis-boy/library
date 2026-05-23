@@ -44,14 +44,14 @@
 ## Book data flow
 - Source markdown lives in `book-data/<BookId>_export.md`.
 - `deployment/create_htmls.py` generates chapter HTML and an intermediate manifest.
-- `deployment/generate_metadata.py` generates `book-data/<BookId>_chapters.json` with ordered chapter entries (`chapter`, `title`, `isSecured`, optional `volume`).
+- `deployment/generate_metadata.py` generates `book-data/<BookId>_chapters.json` with ordered chapter entries (`chapterId`, `chapter`, `title`, `isSecured`, optional `volume`).
 - In this repo, `encrypted` / `isSecured` means Patreon supporter-only paid content, not unavailable or unpublished content.
 - `deployment/update_navigation.py` generates `book-data/<BookId>_navigation.html` from chapter metadata.
 - `deployment/update_wordcount.py` updates `src/basicBookData.json` word counts/dates.
 - `deployment/encryptExport.py` reads `deployment/encrypted_files.md`, encrypts selected files, and uses secrets in `deployment/secret.txt`, `deployment/WtDR_secret.txt`, `deployment/SoWB_secret.txt`.
 - Shared encryption rule parsing for modular scripts lives in `deployment/encryption_rules.py`.
 - Legacy `deployment/modifyExport.py` is intentionally kept untouched for parity checks and is not called by current pipeline.
-- Frontend reader logic consumes `public/navigation-data/<BookId>_chapters.json`; ensure this file exists for every supported book ID.
+- Frontend reader logic consumes `public/navigation-data/<BookId>_chapters.json`; each entry needs both the short stable `chapterId` route token and the real `chapter` file path.
 - Generated outputs copied to `public/` are overwritten by pipeline runs; avoid manual edits there unless you also update the generation flow.
 
 ## Netlify and secrets

@@ -4,8 +4,8 @@ import { useNavigate } from 'react-router-dom';
 import basicBookData, { BasicBookData } from '../../basicBookData';
 import { SourceType } from '../../constants';
 import {
-  getAccessDeniedRoute,
   getReaderRoute,
+  getReaderRouteForChapter,
   getStoredChapterSelection,
   getStoredSelectedChapter,
   LibraryContext,
@@ -58,13 +58,11 @@ const useBookDashboardTile = ({ bookId, smallView }: { bookId: SourceType; small
       return;
     }
 
-    if (!result.ok) {
-      navigate(getAccessDeniedRoute(result.reason));
-      return;
-    }
-
     const storedChapter = getStoredChapterSelection(bbd.id);
-    navigate(getReaderRoute(bbd.id, storedChapter));
+    const targetRoute = storedChapter
+      ? await getReaderRouteForChapter(bbd.id, storedChapter).catch(() => getReaderRoute(bbd.id, storedChapter))
+      : getReaderRoute(bbd.id);
+    navigate(targetRoute);
   };
 
   return {

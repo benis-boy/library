@@ -32,27 +32,27 @@ def build_navigation_html(chapters):
 
         lines.append(f'        <li>{volume}\n            <ul>')
         for entry in entries:
+            chapter_id = entry.get('chapterId')
             chapter = entry.get('chapter')
             title = entry.get('title')
             is_secured = bool(entry.get('isSecured'))
 
-            if not chapter or not title:
+            if not chapter_id or not chapter or not title:
                 continue
 
-            chapter_for_navigation = chapter.replace('/', '\\')
-            escaped_file = chapter_for_navigation.replace('\\', '\\\\').replace("'", "\\'")
+            escaped_chapter_id = str(chapter_id).replace('\\', '\\\\').replace("'", "\\'")
 
             if is_secured:
                 lines.append(
                     "                <li style=\"display: flex; justify-content: space-between; align-items: center;\"><a href=\"#\" onclick=\"loadContent('"
-                    + escaped_file
+                    + escaped_chapter_id
                     + "', true); return false;\" style=\"flex-grow: 1; display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;\"><span>"
                     + title
                     + '</span><span>$</span></a></li>'
                 )
             else:
                 lines.append(
-                    "                <li><a href=\"#\" onclick=\"loadContent('" + escaped_file + "'); return false;\">" + title + '</a></li>'
+                    "                <li><a href=\"#\" onclick=\"loadContent('" + escaped_chapter_id + "'); return false;\">" + title + '</a></li>'
                 )
         lines.append('            </ul>\n        </li>')
 

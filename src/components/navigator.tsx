@@ -4,10 +4,10 @@ import { useNavigate } from 'react-router-dom';
 import { SourceType } from '../constants';
 import { ConfigurationContext } from '../context/ConfigurationContext';
 import {
-  getAccessDeniedRoute,
   getReaderRoute,
+  getReaderRouteForChapter,
   LibraryContext,
-  normalizeChapterPath,
+  normalizeChapterReference,
   normalizeRouteBookId,
 } from '../context/LibraryContext';
 
@@ -22,7 +22,7 @@ const parseLoadContentParams = (raw: string | null): { chapter: string; isPaid: 
   }
 
   const chapterCandidate = match[1].replace(/\\'/g, "'").replace(/\\\\/g, '\\');
-  const chapter = normalizeChapterPath(chapterCandidate);
+  const chapter = normalizeChapterReference(chapterCandidate);
   if (!chapter) {
     return undefined;
   }
@@ -58,7 +58,6 @@ export const Navigator = ({
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const {
     libraryData: { selectedBook, selectedChapter } = {} as { selectedBook: SourceType; selectedChapter?: string },
-    setSelectedChapter,
   } = lContext || {};
   const selectedBookOrDefault: SourceType = selectedBook || normalizeRouteBookId(window.location.hash.split('/')[2]) || 'PSSJ';
 
@@ -74,19 +73,17 @@ export const Navigator = ({
         if (!chapter) {
           return;
         }
-        const result = await setSelectedChapter?.(selectedBookOrDefault, chapter, event.data.isPaid);
-        if (result && !result.ok) {
-          navigate(getAccessDeniedRoute(result.reason));
-        } else {
-          navigate(getReaderRoute(selectedBookOrDefault, chapter));
-        }
+        const targetRoute = await getReaderRouteForChapter(selectedBookOrDefault, chapter).catch(() =>
+          getReaderRoute(selectedBookOrDefault, chapter)
+        );
+        navigate(targetRoute);
       }
     };
     window.addEventListener('message', handleMessage);
     return () => {
       window.removeEventListener('message', handleMessage);
     };
-  }, [navigate, selectedBookOrDefault, setSelectedChapter]);
+  }, [navigate, selectedBookOrDefault]);
 
   useEffect(() => {
     // Highlight selected chapter after iframe loads
@@ -96,13 +93,13 @@ export const Navigator = ({
         if (iframeDocument) {
           // Select all anchor tags in the iframe
           const links = iframeDocument.querySelectorAll('a');
-          const normalizedSelectedChapter = normalizeChapterPath(selectedChapter);
+          const normalizedSelectedChapter = normalizeChapterReference(selectedChapter);
 
           for (let index = 0; index < links.length; index++) {
             const link = links[index];
             link.classList.remove('highlight');
             const chapterParams = getParamsInsideLoadContentOuterHtml(link);
-            const normalizedChapter = normalizeChapterPath(chapterParams?.chapter);
+            const normalizedChapter = normalizeChapterReference(chapterParams?.chapter);
             if (normalizedSelectedChapter && normalizedChapter === normalizedSelectedChapter) {
               link.classList.add('highlight');
               link.scrollIntoView({

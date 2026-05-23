@@ -94,6 +94,14 @@ Generated artifacts include:
 
 `{BookId}_chapters.json` is required by runtime reader logic.
 
+Each chapter entry must include:
+
+- `chapterId`: stable 8-character route token used in `#/reader/{BookId}/{chapterId}`
+- `chapter`: actual generated HTML path under `public/book-data/`
+- `title`
+- `isSecured`
+- optional `volume`
+
 ## Running the Pipeline
 
 Regenerate content for selected books only:

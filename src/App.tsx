@@ -19,8 +19,6 @@ const ConfigurationView = lazy(() =>
 );
 const DataViewer = lazy(() => import('./components/data-viewer').then((module) => ({ default: module.DataViewer })));
 const EndOfBookMessage = lazy(() => import('./components/endOfBook'));
-const AccessRestrictedMessage = lazy(() => import('./components/notLoggedIn'));
-const PatreonMessage = lazy(() => import('./components/notASupporter'));
 
 const ROUTE_PATHS = {
   home: '/',
@@ -29,8 +27,6 @@ const ROUTE_PATHS = {
   readerBookChapter: '/reader/:bookId/:chapter',
   readerBook: '/reader/:bookId',
   readerEnd: '/reader/end',
-  loginRequired: '/access/login-required',
-  supporterRequired: '/access/supporter-required',
 } as const;
 
 // color palette https://colorhunt.co/palette/09122c872341be3144e17564
@@ -126,8 +122,6 @@ function InnerApp() {
             <Route path={ROUTE_PATHS.readerBook} element={<DataViewer scrollerRef={scrollerRef} />} />
             <Route path="/reader" element={<Navigate to={getReaderRoute(DEFAULT_BOOK)} replace />} />
             <Route path={ROUTE_PATHS.readerEnd} element={<EndOfBookMessage />} />
-            <Route path={ROUTE_PATHS.loginRequired} element={<AccessRestrictedMessage />} />
-            <Route path={ROUTE_PATHS.supporterRequired} element={<PatreonMessage />} />
             <Route path="*" element={<Navigate to={ROUTE_PATHS.home} replace />} />
           </Routes>
         </Suspense>

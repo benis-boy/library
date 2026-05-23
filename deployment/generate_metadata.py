@@ -1,7 +1,6 @@
 import json
 import os
 import sys
-from datetime import datetime, timezone
 
 from encryption_rules import is_encrypted_file, parse_encrypted_md
 
@@ -26,8 +25,14 @@ def add_security(manifest, encrypted_folders, encrypted_files, exceptions):
 def to_output_payload(manifest):
     output_chapters = []
     for chapter in manifest.get('chapters', []):
+        chapter_id = chapter.get('chapterId')
+        chapter_path = chapter.get('chapter')
+        if not chapter_id or not chapter_path:
+            raise ValueError(f'Manifest chapter is missing required fields: {chapter}')
+
         entry = {
-            'chapter': chapter.get('chapter'),
+            'chapterId': chapter_id,
+            'chapter': chapter_path,
             'title': chapter.get('title'),
             'isSecured': bool(chapter.get('isSecured', False)),
         }

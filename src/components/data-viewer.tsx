@@ -1,14 +1,16 @@
 import { Fragment, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ConfigurationContext } from '../context/ConfigurationContext';
+import AccessRestrictedMessage from './notLoggedIn';
+import PatreonMessage from './notASupporter';
 import { ImageLightbox } from './gallery/ImageLightbox';
 import {
-  getAccessDeniedRoute,
   getNextChapterForBook,
   getReaderRoute,
+  getReaderRouteForChapter,
   getStoredChapterSelection,
   LibraryContext,
-  normalizeChapterPath,
+  normalizeChapterReference,
   normalizeRouteBookId,
   parseReaderRoute,
 } from '../context/LibraryContext';
@@ -22,7 +24,12 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
   const [galleryMap, setGalleryMap] = useState<Record<string, { fullSrc: string }>>({});
   const [lightboxImageId, setLightboxImageId] = useState<string | null>(null);
   const {
-    libraryData: { content, selectedBook, selectedChapter } = { content: '', selectedBook: undefined, selectedChapter: undefined },
+    libraryData: { content, selectedBook, selectedChapter, accessDeniedReason } = {
+      content: '',
+      selectedBook: undefined,
+      selectedChapter: undefined,
+      accessDeniedReason: null,
+    },
     setSelectedBook,
     setSelectedChapter,
   } = lContext || {};
@@ -30,36 +37,34 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
   const baseUrl = import.meta.env.BASE_URL;
 
   useEffect(() => {
-    if (!setSelectedBook || !setSelectedChapter) {
-      return;
-    }
+    let cancelled = false;
 
-    const routeBook = normalizeRouteBookId(params.bookId);
-    if (!routeBook) {
-      navigate('/', { replace: true });
-      return;
-    }
+    const syncReaderState = async () => {
+      if (!setSelectedBook || !setSelectedChapter) {
+        return;
+      }
 
-    const routeInfo = parseReaderRoute(params.bookId, params.chapter);
+      const routeBook = normalizeRouteBookId(params.bookId);
+      if (!routeBook) {
+        navigate('/', { replace: true });
+        return;
+      }
 
-    if (!routeInfo) {
-      const activeChapter =
-        (selectedBook === routeBook ? normalizeChapterPath(selectedChapter) : undefined) || getStoredChapterSelection(routeBook);
+      const routeInfo = parseReaderRoute(params.bookId, params.chapter);
 
-      if (activeChapter) {
-        const currentPath = window.location.hash.replace(/^#/, '') || '/';
-        const targetPath = getReaderRoute(routeBook, activeChapter);
-        if (currentPath !== targetPath) {
-          navigate(targetPath, { replace: true });
-        }
-      } else {
-        void setSelectedBook(routeBook, true).then((result) => {
-          if (!result) {
-            return;
+      if (!routeInfo) {
+        const activeChapter =
+          (selectedBook === routeBook ? normalizeChapterReference(selectedChapter) : undefined) || getStoredChapterSelection(routeBook);
+
+        if (activeChapter) {
+          const currentPath = window.location.hash.replace(/^#/, '') || '/';
+          const targetPath = await getReaderRouteForChapter(routeBook, activeChapter).catch(() => getReaderRoute(routeBook, activeChapter));
+          if (!cancelled && currentPath !== targetPath) {
+            navigate(targetPath, { replace: true });
           }
-
-          if (!result.ok) {
-            navigate(getAccessDeniedRoute(result.reason), { replace: true });
+        } else {
+          const result = await setSelectedBook(routeBook, true);
+          if (cancelled || !result) {
             return;
           }
 
@@ -69,30 +74,42 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
           }
 
           const currentPath = window.location.hash.replace(/^#/, '') || '/';
-          const targetPath = getReaderRoute(routeBook, firstSelectedChapter);
-          if (currentPath !== targetPath) {
+          const targetPath = await getReaderRouteForChapter(routeBook, firstSelectedChapter).catch(() =>
+            getReaderRoute(routeBook, firstSelectedChapter)
+          );
+          if (!cancelled && currentPath !== targetPath) {
             navigate(targetPath, { replace: true });
           }
-        });
-      }
-      return;
-    }
-
-    const storedSelection = getStoredChapterSelection(routeInfo.book);
-    if (storedSelection === routeInfo.chapter && content) {
-      return;
-    }
-
-    void setSelectedChapter(routeInfo.book, routeInfo.chapter).then((result) => {
-      if (!result) {
+        }
         return;
       }
 
-      if (!result.ok) {
-        navigate(getAccessDeniedRoute(result.reason), { replace: true });
+      const currentPath = window.location.hash.replace(/^#/, '') || '/';
+      const canonicalPath = await getReaderRouteForChapter(routeInfo.book, routeInfo.chapter).catch(() =>
+        getReaderRoute(routeInfo.book, routeInfo.chapter)
+      );
+      if (!cancelled && currentPath !== canonicalPath) {
+        navigate(canonicalPath, { replace: true });
+        return;
       }
-    });
-  }, [content, navigate, params.bookId, params.chapter, selectedBook, selectedChapter, setSelectedBook, setSelectedChapter]);
+
+      const currentSelection = selectedBook === routeInfo.book ? normalizeChapterReference(selectedChapter) : undefined;
+      if (currentSelection === routeInfo.chapter && (content || accessDeniedReason)) {
+        return;
+      }
+
+      const result = await setSelectedChapter(routeInfo.book, routeInfo.chapter);
+      if (cancelled || !result) {
+        return;
+      }
+    };
+
+    void syncReaderState();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [accessDeniedReason, content, navigate, params.bookId, params.chapter, selectedBook, selectedChapter, setSelectedBook, setSelectedChapter]);
 
   useEffect(() => {
     const adjustHeight = () => {
@@ -223,38 +240,51 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
 
   if (!lContext) return <Fragment />;
 
+  const readerBody = accessDeniedReason ? (
+    accessDeniedReason === 'login_required' ? (
+      <AccessRestrictedMessage />
+    ) : (
+      <PatreonMessage />
+    )
+  ) : (
+    <div className="w-full flex lg:pl-4 px-2 lg:pr-0">
+      <iframe
+        ref={iframeRef}
+        onLoad={() => injectStyles(iframeRef, { isDarkMode, selectedFont, fontSize })}
+        srcDoc={`<html><body style="margin: 0;margin-top: -16px;margin-bottom: -16px;"><div style="height:100%">${content}</div></html></body>`}
+        className="flex-grow"
+        title="Embedded Content"
+      />
+    </div>
+  );
+
+  const showNextChapterButton = !accessDeniedReason;
+
   return (
     <>
-      <div className="w-full flex lg:pl-4 px-2 lg:pr-0">
-        <iframe
-          ref={iframeRef}
-          onLoad={() => injectStyles(iframeRef, { isDarkMode, selectedFont, fontSize })}
-          srcDoc={`<html><body style="margin: 0;margin-top: -16px;margin-bottom: -16px;"><div style="height:100%">${content}</div></html></body>`}
-          className="flex-grow"
-          title="Embedded Content"
-        />
-      </div>
+      {readerBody}
 
-      <div className="flex justify-center mt-4 pb-4">
-        <button
-          className="px-6 py-2 bg-[#872341] hover:scale-105 text-white font-semibold rounded-lg shadow-md transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-opacity-50"
-          style={{ maxWidth: '200px' }}
-          onClick={async (e) => {
-            e.currentTarget.blur();
-            if (!setSelectedChapter) {
-              return;
-            }
+      {showNextChapterButton ? (
+        <div className="flex justify-center mt-4 pb-4">
+          <button
+            className="px-6 py-2 bg-[#872341] hover:scale-105 text-white font-semibold rounded-lg shadow-md transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-opacity-50"
+            style={{ maxWidth: '200px' }}
+            onClick={async (e) => {
+              e.currentTarget.blur();
+              if (!setSelectedChapter) {
+                return;
+              }
 
-            const routeBook = normalizeRouteBookId(params.bookId);
-            const routeInfo = parseReaderRoute(params.bookId, params.chapter);
-            const book = routeInfo?.book || routeBook || selectedBook;
-            const currentChapter =
-              routeInfo?.chapter ||
-              (book && selectedBook === book ? normalizeChapterPath(selectedChapter) : undefined) ||
-              (book ? getStoredChapterSelection(book) : undefined);
-            if (!book || !currentChapter) {
-              return;
-            }
+              const routeBook = normalizeRouteBookId(params.bookId);
+              const routeInfo = parseReaderRoute(params.bookId, params.chapter);
+              const book = routeInfo?.book || routeBook || selectedBook;
+              const currentChapter =
+                routeInfo?.chapter ||
+                (book && selectedBook === book ? normalizeChapterReference(selectedChapter) : undefined) ||
+                (book ? getStoredChapterSelection(book) : undefined);
+              if (!book || !currentChapter) {
+                return;
+              }
 
             const nextChapter = await getNextChapterForBook(book, currentChapter);
             if (!nextChapter) {
@@ -262,18 +292,14 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
               return;
             }
 
-            const result = await setSelectedChapter(book, nextChapter.chapter, nextChapter.isSecured);
-            if (!result.ok) {
-              navigate(getAccessDeniedRoute(result.reason));
-              return;
-            }
-
-            navigate(getReaderRoute(book, nextChapter.chapter));
+            const nextChapterReference = nextChapter.chapterId || nextChapter.chapter;
+            navigate(getReaderRoute(book, nextChapterReference));
           }}
         >
-          Next Chapter
-        </button>
-      </div>
+            Next Chapter
+          </button>
+        </div>
+      ) : null}
 
       <ImageLightbox
         open={Boolean(lightboxImageId && selectedLightboxImageSrc)}

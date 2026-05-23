@@ -7,6 +7,7 @@ export type AccessDeniedReason = 'login_required' | 'supporter_required';
 export type ChapterSelectionResult = { ok: true } | { ok: false; reason: AccessDeniedReason };
 
 export type ChapterNavigationEntry = {
+  chapterId?: string;
   chapter: string;
   title: string;
   isSecured: boolean;
@@ -27,9 +28,6 @@ export type BookSelectionResult =
   | { ok: true; mode: 'selected_only' | 'loaded_chapter' | 'loaded_stored_chapter' }
   | { ok: false; reason: AccessDeniedReason };
 
-export const getAccessDeniedRoute = (reason: AccessDeniedReason) =>
-  reason === 'login_required' ? '/access/login-required' : '/access/supporter-required';
-
 export const getReaderRoute = (book: SourceType, chapter?: string) =>
   chapter
     ? `/reader/${encodeURIComponent(book)}/${encodeURIComponent(chapter)}`
@@ -40,6 +38,7 @@ export type LibraryData = {
   selectedChapter: string | undefined;
   content: string;
   isSecured: boolean | undefined;
+  accessDeniedReason: AccessDeniedReason | null;
 };
 
 export type LibraryContextType = {
@@ -55,9 +54,23 @@ const LEGACY_LIBRARY_ENCRYPTION_PREFIX = 'IS_ENCRYPTED_';
 export const DEFAULT_BOOK: SourceType = 'PSSJ';
 
 const chapterMetadataCache = new Map<SourceType, Promise<ChapterNavigationEntry[]>>();
+const CHAPTER_ID_PATTERN = /^[0-9a-f]{8}$/i;
 
 const isSourceType = (value: string | null): value is SourceType =>
   value !== null && SourceTypes.includes(value as SourceType);
+
+const normalizeChapterId = (value: string | undefined): string | undefined => {
+  if (!value) {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed || !CHAPTER_ID_PATTERN.test(trimmed)) {
+    return undefined;
+  }
+
+  return trimmed.toLowerCase();
+};
 
 export const normalizeRouteBookId = (value: string | undefined): SourceType | undefined => {
   if (!value) {
@@ -74,7 +87,16 @@ const normalizeChapterFromRoute = (value: string | undefined): string | undefine
   }
 
   const decoded = decodeURIComponent(value);
-  return normalizeChapterPath(decoded);
+  return normalizeChapterReference(decoded);
+};
+
+export const normalizeChapterReference = (value: string | undefined): string | undefined => {
+  const chapterId = normalizeChapterId(value);
+  if (chapterId) {
+    return chapterId;
+  }
+
+  return normalizeChapterPath(value);
 };
 
 export const normalizeChapterPath = (value: string | undefined): string | undefined => {
@@ -130,11 +152,11 @@ export function setStoredSelectedBook(book: SourceType) {
 }
 
 export function getStoredSelectedChapter(book: SourceType): string | undefined {
-  return normalizeChapterPath(localStorage.getItem(getSelectedChapterStorageKey(book)) || undefined);
+  return normalizeChapterReference(localStorage.getItem(getSelectedChapterStorageKey(book)) || undefined);
 }
 
 export function setStoredChapterSelection(book: SourceType, chapter: string) {
-  const normalized = normalizeChapterPath(chapter);
+  const normalized = normalizeChapterReference(chapter);
   if (!normalized) {
     return;
   }
@@ -152,6 +174,8 @@ const normalizeChapterEntry = (entry: ChapterNavigationEntry): ChapterNavigation
     return undefined;
   }
 
+  const chapterId = normalizeChapterId(entry.chapterId);
+
   const title = (entry.title || '').trim();
   if (!title) {
     return undefined;
@@ -162,6 +186,10 @@ const normalizeChapterEntry = (entry: ChapterNavigationEntry): ChapterNavigation
     title,
     isSecured: entry.isSecured === true,
   };
+
+  if (chapterId) {
+    normalized.chapterId = chapterId;
+  }
 
   if (entry.volume?.trim()) {
     normalized.volume = entry.volume;
@@ -210,6 +238,66 @@ export const loadNavigationChapters = async (book: SourceType): Promise<ChapterN
   }
 };
 
+const findChapterEntry = (chapters: ChapterNavigationEntry[], chapterReference: string): ChapterNavigationEntry | undefined => {
+  const normalizedReference = normalizeChapterReference(chapterReference);
+  if (!normalizedReference) {
+    return undefined;
+  }
+
+  const normalizedReferenceId = normalizeChapterId(normalizedReference);
+  const normalizedReferencePath = normalizeChapterPath(normalizedReference);
+
+  return chapters.find((entry) => {
+    if (normalizedReferenceId && entry.chapterId === normalizedReferenceId) {
+      return true;
+    }
+
+    const chapterPath = normalizeChapterPath(entry.chapter);
+    return !!normalizedReferencePath && chapterPath === normalizedReferencePath;
+  });
+};
+
+export const resolveChapterEntryForBook = async (
+  book: SourceType,
+  chapterReference: string
+): Promise<ChapterNavigationEntry | undefined> => {
+  const normalizedReference = normalizeChapterReference(chapterReference);
+  if (!normalizedReference) {
+    return undefined;
+  }
+
+  const chapters = await loadNavigationChapters(book);
+  return findChapterEntry(chapters, normalizedReference);
+};
+
+export const getResolvedChapterPathForBook = async (book: SourceType, chapterReference: string): Promise<string | undefined> => {
+  const normalizedReference = normalizeChapterReference(chapterReference);
+  if (!normalizedReference) {
+    return undefined;
+  }
+
+  const entry = await resolveChapterEntryForBook(book, normalizedReference).catch(() => undefined);
+  return entry?.chapter || normalizeChapterPath(normalizedReference);
+};
+
+export const getChapterRouteParameterForBook = async (
+  book: SourceType,
+  chapterReference: string
+): Promise<string | undefined> => {
+  const normalizedReference = normalizeChapterReference(chapterReference);
+  if (!normalizedReference) {
+    return undefined;
+  }
+
+  const entry = await resolveChapterEntryForBook(book, normalizedReference).catch(() => undefined);
+  return entry?.chapterId || entry?.chapter || normalizedReference;
+};
+
+export const getReaderRouteForChapter = async (book: SourceType, chapterReference: string): Promise<string> => {
+  const chapter = await getChapterRouteParameterForBook(book, chapterReference);
+  return getReaderRoute(book, chapter);
+};
+
 export const getFirstChapterForBook = async (book: SourceType): Promise<ChapterNavigationEntry | undefined> => {
   const chapters = await loadNavigationChapters(book);
   return chapters[0];
@@ -219,13 +307,18 @@ export const getNextChapterForBook = async (
   book: SourceType,
   currentChapter: string
 ): Promise<ChapterNavigationEntry | undefined> => {
-  const normalizedCurrent = normalizeChapterPath(currentChapter);
+  const normalizedCurrent = normalizeChapterReference(currentChapter);
   if (!normalizedCurrent) {
     return undefined;
   }
 
   const chapters = await loadNavigationChapters(book);
-  const chapterIndex = chapters.findIndex((entry) => normalizeChapterPath(entry.chapter) === normalizedCurrent);
+  const currentEntry = findChapterEntry(chapters, normalizedCurrent);
+  if (!currentEntry) {
+    return undefined;
+  }
+
+  const chapterIndex = chapters.findIndex((entry) => entry === currentEntry);
   if (chapterIndex === -1 || chapterIndex + 1 >= chapters.length) {
     return undefined;
   }
@@ -234,13 +327,12 @@ export const getNextChapterForBook = async (
 };
 
 export const getChapterSecurityForBook = async (book: SourceType, chapter: string): Promise<boolean | undefined> => {
-  const normalizedChapter = normalizeChapterPath(chapter);
+  const normalizedChapter = normalizeChapterReference(chapter);
   if (!normalizedChapter) {
     return undefined;
   }
 
-  const chapters = await loadNavigationChapters(book);
-  const chapterEntry = chapters.find((entry) => normalizeChapterPath(entry.chapter) === normalizedChapter);
+  const chapterEntry = await resolveChapterEntryForBook(book, normalizedChapter);
   return chapterEntry?.isSecured;
 };
 

@@ -1,4 +1,5 @@
 import html
+import hashlib
 import json
 import math
 import os
@@ -215,6 +216,10 @@ def _to_runtime_chapter_path(path: str):
     return path.replace('\\', '/').replace('#', '_')
 
 
+def _build_chapter_id(runtime_chapter_path: str):
+    return hashlib.sha1(runtime_chapter_path.encode('utf-8')).hexdigest()[:8]
+
+
 def build_chapter_manifest(directory: str, book_id: str):
     html_files: list[str] = []
 
@@ -242,6 +247,7 @@ def build_chapter_manifest(directory: str, book_id: str):
     sorted_volumes = sorted(volume_dict.items(), key=_get_volume_sort_key)
 
     chapters: list[dict[str, str]] = []
+    chapter_ids: dict[str, str] = {}
     for volume_name, chapter_rows in sorted_volumes:
         for chapter_name, file_path in chapter_rows:
             normalized_file = os.path.normpath(file_path)
@@ -249,10 +255,18 @@ def build_chapter_manifest(directory: str, book_id: str):
             display_title = chapter_title_mapping.get(chapter_key, chapter_name.replace('_', ' ', 1))
 
             source_chapter = normalized_file.replace('\\', '/')
+            runtime_chapter = _to_runtime_chapter_path(source_chapter)
+            chapter_id = _build_chapter_id(runtime_chapter)
+            existing_path = chapter_ids.get(chapter_id)
+            if existing_path and existing_path != runtime_chapter:
+                raise ValueError(f'Chapter ID collision for {chapter_id}: {existing_path} vs {runtime_chapter}')
+            chapter_ids[chapter_id] = runtime_chapter
+
             chapters.append(
                 {
+                    'chapterId': chapter_id,
                     'sourceChapter': source_chapter,
-                    'chapter': _to_runtime_chapter_path(source_chapter),
+                    'chapter': runtime_chapter,
                     'title': display_title,
                     'volume': volume_name,
                 }

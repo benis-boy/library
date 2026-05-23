@@ -2,12 +2,14 @@
   "bookId": "SoWB",
   "chapters": [
     {
+      "chapterId": "5834f88d",
       "chapter": "SoWB/Data/01_Brand New Day in Hell.html",
       "title": "01 Brand New Day in Hell",
       "isSecured": false,
       "volume": "Data"
     },
     {
+      "chapterId": "3bc825ba",
       "chapter": "SoWB/Data/02_Birmingham.html",
       "title": "02 Birmingham",
       "isSecured": false,

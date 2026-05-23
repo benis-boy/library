@@ -7,13 +7,15 @@ import {
   clearLegacyChapterEncryptionKeys,
   getChapterSecurityForBook,
   getFirstChapterForBook,
+  getChapterRouteParameterForBook,
+  getResolvedChapterPathForBook,
   getStoredChapterSelection,
   getStoredSelectedBook,
   isLibrarySelectionStorageKey,
   LibraryContext,
   LibraryContextType,
   LibraryData,
-  normalizeChapterPath,
+  normalizeChapterReference,
   setStoredChapterSelection,
   setStoredSelectedBook,
   useLoadContent,
@@ -28,16 +30,18 @@ const getStoredLibrarySelection = () => {
     selectedBook,
     selectedChapter: chapterSelection,
     isSecured: undefined,
+    accessDeniedReason: null,
   };
 };
 
 const buildInitialLibraryData = (): LibraryData => {
-  const { selectedBook, selectedChapter, isSecured } = getStoredLibrarySelection();
+  const { selectedBook, selectedChapter, isSecured, accessDeniedReason } = getStoredLibrarySelection();
 
   return {
     selectedBook,
     selectedChapter,
     isSecured,
+    accessDeniedReason,
     content: '',
   };
 };
@@ -46,6 +50,16 @@ export const LibraryProvider = ({ children }: { children: ReactNode }) => {
   const pContext = useContext(PatreonContext);
 
   const [libraryData, setLibraryData] = useState<LibraryData>(() => buildInitialLibraryData());
+
+  const clearContent = useCallback(() => {
+    setLibraryData((old) => {
+      if (!old.content) {
+        return old;
+      }
+
+      return { ...old, content: '' };
+    });
+  }, []);
 
   useEffect(() => {
     clearLegacyChapterEncryptionKeys();
@@ -70,7 +84,8 @@ export const LibraryProvider = ({ children }: { children: ReactNode }) => {
         if (
           old.selectedBook === selection.selectedBook &&
           old.selectedChapter === selection.selectedChapter &&
-          old.isSecured === selection.isSecured
+          old.isSecured === selection.isSecured &&
+          old.accessDeniedReason === selection.accessDeniedReason
         ) {
           return old;
         }
@@ -90,11 +105,11 @@ export const LibraryProvider = ({ children }: { children: ReactNode }) => {
 
   const handleLoadedContent = useCallback((data: string) => {
     setLibraryData((old) => {
-      if (old.content === data) {
+      if (old.content === data && old.accessDeniedReason === null) {
         return old;
       }
 
-      return { ...old, content: data };
+      return { ...old, content: data, accessDeniedReason: null };
     });
   }, []);
 
@@ -127,51 +142,110 @@ export const LibraryProvider = ({ children }: { children: ReactNode }) => {
     [pContext?.isLoggedIn, pContext?.isSupporter]
   );
 
-  const setSelection = useCallback((book: SourceType, chapter: string | undefined, isSecured: boolean | undefined) => {
-    const normalizedChapter = normalizeChapterPath(chapter);
+  const setSelection = useCallback(
+    (book: SourceType, chapter: string | undefined, isSecured: boolean | undefined, accessDeniedReason: AccessDeniedReason | null = null) => {
+      const normalizedChapter = normalizeChapterReference(chapter);
+      setLibraryData((old) => {
+        if (
+          old.selectedBook === book &&
+          old.selectedChapter === normalizedChapter &&
+          old.isSecured === isSecured &&
+          old.accessDeniedReason === accessDeniedReason
+        ) {
+          return old;
+        }
+
+        return {
+          ...old,
+          selectedBook: book,
+          selectedChapter: normalizedChapter,
+          isSecured,
+          accessDeniedReason,
+        };
+      });
+
+      setStoredSelectedBook(book);
+      if (normalizedChapter) {
+        setStoredChapterSelection(book, normalizedChapter);
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const selectedChapter = libraryData.selectedChapter;
+    if (!selectedChapter) {
+      return;
+    }
+
+    void getChapterRouteParameterForBook(libraryData.selectedBook, selectedChapter)
+      .then((canonicalChapter) => {
+        if (cancelled || !canonicalChapter || canonicalChapter === selectedChapter) {
+          return;
+        }
+
+        setSelection(libraryData.selectedBook, canonicalChapter, libraryData.isSecured, libraryData.accessDeniedReason);
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [libraryData.accessDeniedReason, libraryData.isSecured, libraryData.selectedBook, libraryData.selectedChapter, setSelection]);
+
+  useEffect(() => {
     setLibraryData((old) => {
-      if (old.selectedBook === book && old.selectedChapter === normalizedChapter && old.isSecured === isSecured) {
+      if (old.accessDeniedReason === null) {
+        return old;
+      }
+
+      if (old.accessDeniedReason === 'login_required' && !pContext?.isLoggedIn) {
+        return old;
+      }
+
+      if (old.accessDeniedReason === 'supporter_required' && !pContext?.isSupporter) {
         return old;
       }
 
       return {
         ...old,
-        selectedBook: book,
-        selectedChapter: normalizedChapter,
-        isSecured,
+        accessDeniedReason: null,
       };
     });
-
-    setStoredSelectedBook(book);
-    if (normalizedChapter) {
-      setStoredChapterSelection(book, normalizedChapter);
-    }
-  }, []);
+  }, [pContext?.isLoggedIn, pContext?.isSupporter]);
 
   const setSelectedChapter = useCallback(
     async (book: SourceType, chapter: string, secured?: boolean): Promise<ChapterSelectionResult> => {
-      const normalizedChapter = normalizeChapterPath(chapter);
+      const normalizedChapter = normalizeChapterReference(chapter);
       if (!normalizedChapter) {
         return { ok: true };
       }
 
+      const canonicalChapter = await getChapterRouteParameterForBook(book, normalizedChapter).catch(() => normalizedChapter);
+      const resolvedChapterPath = await getResolvedChapterPathForBook(book, normalizedChapter).catch(() => undefined);
+      const selectedChapterReference = canonicalChapter || normalizedChapter;
+      const contentChapterPath = resolvedChapterPath || normalizedChapter;
+
       let effectiveSecured = secured;
       if (typeof effectiveSecured !== 'boolean') {
-        const resolved = await resolveChapterSecuredFromMetadata(book, normalizedChapter);
+        const resolved = await resolveChapterSecuredFromMetadata(book, selectedChapterReference);
         effectiveSecured = resolved === true;
       }
 
-      setSelection(book, normalizedChapter, effectiveSecured);
-
       const deniedReason = getAccessDeniedReason(effectiveSecured);
       if (deniedReason) {
+        setSelection(book, selectedChapterReference, effectiveSecured, deniedReason);
+        clearContent();
         return { ok: false, reason: deniedReason };
       }
 
-      await loadContent(book, normalizedChapter, effectiveSecured);
+      setSelection(book, selectedChapterReference, effectiveSecured, null);
+      await loadContent(book, contentChapterPath, effectiveSecured);
       return { ok: true };
     },
-    [getAccessDeniedReason, loadContent, resolveChapterSecuredFromMetadata, setSelection]
+    [clearContent, getAccessDeniedReason, loadContent, resolveChapterSecuredFromMetadata, setSelection]
   );
 
   const setSelectedBook = useCallback(
