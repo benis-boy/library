@@ -1,0 +1,16 @@
+{
+    "general":  {
+                    "galleryManifest":  "4"
+                },
+    "books":  {
+                  "PSSJ":  {
+                               "manifest":  "3"
+                           },
+                  "WtDR":  {
+                               "manifest":  "3"
+                           },
+                  "SoWB":  {
+                               "manifest":  "3"
+                           }
+              }
+}

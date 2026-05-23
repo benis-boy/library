@@ -1,6 +1,7 @@
 import OpenInFullIcon from '@mui/icons-material/OpenInFull';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { getGalleryManifestPath } from '../../cacheVersioning';
 import { ImageLightbox } from './ImageLightbox';
 import { BASE_URL, markGalleryAsVisited, toPublicAssetPath, toTimestamp } from './galleryShared';
 import {
@@ -58,7 +59,7 @@ export const GalleryPage = ({ onTagOptionsChange }: GalleryPageProps) => {
       setError(null);
 
       try {
-        const response = await fetch(`${BASE_URL}assets/gallery/gallery.json`, { cache: 'no-store' });
+        const response = await fetch(getGalleryManifestPath(BASE_URL));
         if (!response.ok) {
           throw new Error(`Gallery manifest failed to load (${response.status}).`);
         }

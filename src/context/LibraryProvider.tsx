@@ -5,6 +5,7 @@ import {
   BookSelectionResult,
   ChapterSelectionResult,
   clearLegacyChapterEncryptionKeys,
+  getChapterContentVersionForBook,
   getChapterSecurityForBook,
   getFirstChapterForBook,
   getChapterRouteParameterForBook,
@@ -225,6 +226,7 @@ export const LibraryProvider = ({ children }: { children: ReactNode }) => {
 
       const canonicalChapter = await getChapterRouteParameterForBook(book, normalizedChapter).catch(() => normalizedChapter);
       const resolvedChapterPath = await getResolvedChapterPathForBook(book, normalizedChapter).catch(() => undefined);
+      const contentVersion = await getChapterContentVersionForBook(book, normalizedChapter).catch(() => undefined);
       const selectedChapterReference = canonicalChapter || normalizedChapter;
       const contentChapterPath = resolvedChapterPath || normalizedChapter;
 
@@ -242,7 +244,7 @@ export const LibraryProvider = ({ children }: { children: ReactNode }) => {
       }
 
       setSelection(book, selectedChapterReference, effectiveSecured, null);
-      await loadContent(book, contentChapterPath, effectiveSecured);
+      await loadContent(book, contentChapterPath, effectiveSecured, contentVersion);
       return { ok: true };
     },
     [clearContent, getAccessDeniedReason, loadContent, resolveChapterSecuredFromMetadata, setSelection]

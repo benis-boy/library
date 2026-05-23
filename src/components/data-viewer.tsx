@@ -1,5 +1,6 @@
 import { Fragment, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { getGalleryManifestPath } from '../cacheVersioning';
 import { ConfigurationContext } from '../context/ConfigurationContext';
 import AccessRestrictedMessage from './notLoggedIn';
 import PatreonMessage from './notASupporter';
@@ -162,7 +163,7 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
 
     const loadGalleryMap = async () => {
       try {
-        const response = await fetch(`${baseUrl}assets/gallery/gallery.json`, { cache: 'no-store' });
+        const response = await fetch(getGalleryManifestPath(baseUrl));
         if (!response.ok) {
           return;
         }

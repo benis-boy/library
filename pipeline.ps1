@@ -39,6 +39,129 @@ function ReadJsonFile {
     }
 }
 
+function Get-CacheVersionsPath {
+    return 'src\cacheVersions.json'
+}
+
+function Get-CacheVersions {
+    $path = Get-CacheVersionsPath
+    if (-not (Test-Path -LiteralPath $path)) {
+        throw "Missing cache versions file at $path"
+    }
+
+    $versions = ReadJsonFile -path $path -description 'cache versions'
+    if ($null -eq $versions) {
+        throw "Failed to load cache versions from $path"
+    }
+
+    return $versions
+}
+
+function Save-CacheVersions {
+    param(
+        $versions
+    )
+
+    $path = Get-CacheVersionsPath
+    $json = $versions | ConvertTo-Json -Depth 10
+    Set-Content -LiteralPath $path -Value $json
+}
+
+function Ensure-CacheVersionString {
+    param(
+        $value
+    )
+
+    $parsed = 0
+    if (-not [int]::TryParse([string]$value, [ref]$parsed)) {
+        return '1'
+    }
+
+    return [string][Math]::Max($parsed, 1)
+}
+
+function Increment-CacheVersion {
+    param(
+        $value
+    )
+
+    $parsed = 0
+    if (-not [int]::TryParse([string]$value, [ref]$parsed)) {
+        $parsed = 0
+    }
+
+    return [string]($parsed + 1)
+}
+
+function Ensure-BookCacheVersionEntry {
+    param(
+        $versions,
+        [string]$bookId
+    )
+
+    if ($null -eq $versions.books) {
+        $versions | Add-Member -NotePropertyName books -NotePropertyValue ([pscustomobject]@{}) -Force
+    }
+
+    $bookEntryProperty = $versions.books.PSObject.Properties[$bookId]
+    $bookEntry = if ($null -ne $bookEntryProperty) { $bookEntryProperty.Value } else { $null }
+    if ($null -eq $bookEntry) {
+        $bookEntry = [pscustomobject]@{
+            manifest = '1'
+        }
+        $versions.books | Add-Member -NotePropertyName $bookId -NotePropertyValue $bookEntry -Force
+    }
+
+    if ($null -eq $bookEntry.manifest) {
+        $bookEntry | Add-Member -NotePropertyName manifest -NotePropertyValue '1' -Force
+    }
+    else {
+        $bookEntry.manifest = Ensure-CacheVersionString $bookEntry.manifest
+    }
+
+    return $bookEntry
+}
+
+function Ensure-CacheVersionShape {
+    param(
+        $versions
+    )
+
+    if ($null -eq $versions.general) {
+        $versions | Add-Member -NotePropertyName general -NotePropertyValue ([pscustomobject]@{}) -Force
+    }
+
+    if ($null -eq $versions.general.galleryManifest) {
+        $versions.general | Add-Member -NotePropertyName galleryManifest -NotePropertyValue '1' -Force
+    }
+    else {
+        $versions.general.galleryManifest = Ensure-CacheVersionString $versions.general.galleryManifest
+    }
+
+    foreach ($bookId in @('PSSJ', 'WtDR', 'SoWB')) {
+        Ensure-BookCacheVersionEntry -versions $versions -bookId $bookId | Out-Null
+    }
+}
+
+function Update-BookCacheVersions {
+    param(
+        $versions,
+        [string]$bookId
+    )
+
+    $bookEntry = Ensure-BookCacheVersionEntry -versions $versions -bookId $bookId
+    $bookEntry.manifest = Increment-CacheVersion $bookEntry.manifest
+}
+
+function Update-GeneralCacheVersions {
+    param(
+        $versions
+    )
+
+    Ensure-CacheVersionShape -versions $versions
+    $versions.general.galleryManifest = Increment-CacheVersion $versions.general.galleryManifest
+}
+
 function WaitForGalleryAdminServer {
     param(
         [int]$processId,
@@ -366,14 +489,20 @@ if ($showHelp) {
 
 $bookIds = @($bookIds | Select-Object -Unique)
 
+$cacheVersions = Get-CacheVersions
+Ensure-CacheVersionShape -versions $cacheVersions
+
 foreach ($bookId in $bookIds) {
     HandleBook -bookId $bookId
     ItemPlaceholder -bookId $bookId
+    Update-BookCacheVersions -versions $cacheVersions -bookId $bookId
 }
 
 $galleryReviewSessionPath = Join-Path ([System.IO.Path]::GetTempPath()) ("gallery-review-" + [Guid]::NewGuid().ToString('N') + '.json')
 
 HandleGallery -retranslateTags $shouldRetranslateTags -reviewSessionOutputPath $galleryReviewSessionPath
+Update-GeneralCacheVersions -versions $cacheVersions
+Save-CacheVersions -versions $cacheVersions
 
 $reviewCompleted = RunStrictGalleryReview -reviewSessionPath $galleryReviewSessionPath
 if (-not $reviewCompleted) {

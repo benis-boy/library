@@ -70,6 +70,7 @@ export const PatreonProvider = ({ children }: { children: ReactNode }) => {
     currently_entitled_tiers: [],
   });
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isAuthResolving, setIsAuthResolving] = useState(() => new URLSearchParams(window.location.search).has('code'));
   const [encryptionPassword, setEncryptionPassword] = useState('');
   const [encryptionPasswordV2, setEncryptionPasswordV2] = useState<Record<SourceType, string>>({
     PSSJ: 'unused',
@@ -144,15 +145,24 @@ export const PatreonProvider = ({ children }: { children: ReactNode }) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ code: authCode }),
     });
-    const data = await response.json();
+
+    const raw = await response.text();
+    let data: unknown = null;
+    try {
+      data = raw ? JSON.parse(raw) : null;
+    } catch {
+      data = raw;
+    }
+
     if (!response.ok) {
       console.error('Error completing Patreon login:', data);
       return false;
     }
 
-    if (data && data.userInfo && data.encryption_passwordv2) {
-      localStorage.setItem('patreon_token', JSON.stringify(data));
-      const { userInfo, encryption_password, encryption_passwordv2 } = data as PatreonVerifierResponseBody;
+    const parsedData = data as Partial<PatreonVerifierResponseBody> | null;
+    if (parsedData && parsedData.userInfo && parsedData.encryption_passwordv2 && typeof parsedData.encryption_password === 'string') {
+      localStorage.setItem('patreon_token', JSON.stringify(parsedData));
+      const { userInfo, encryption_password, encryption_passwordv2 } = parsedData as PatreonVerifierResponseBody;
       setUserInfo(userInfo);
       setIsLoggedIn(true);
       setEncryptionPassword(encryption_password);
@@ -170,6 +180,7 @@ export const PatreonProvider = ({ children }: { children: ReactNode }) => {
     const authCode = urlParams.get('code');
     const returnedState = urlParams.get('state');
     if (authCode) {
+      setIsAuthResolving(true);
       void handleAuthCode(authCode)
         .then((didLogin) => {
           urlParams.delete('code');
@@ -183,11 +194,16 @@ export const PatreonProvider = ({ children }: { children: ReactNode }) => {
           } else {
             clearPendingPatreonLogin();
           }
+
+          setIsAuthResolving(false);
         })
         .catch((error) => {
           console.error('Error handling Patreon auth code:', error);
           clearPendingPatreonLogin();
+          setIsAuthResolving(false);
         });
+    } else {
+      setIsAuthResolving(false);
     }
   }, []);
 
@@ -200,6 +216,10 @@ export const PatreonProvider = ({ children }: { children: ReactNode }) => {
       window.location.reload();
     }
   }, []);
+
+  if (isAuthResolving) {
+    return null;
+  }
 
   return (
     <PatreonContext.Provider

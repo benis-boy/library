@@ -1,6 +1,7 @@
 import CollectionsIcon from '@mui/icons-material/Collections';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { getGalleryManifestPath } from '../../cacheVersioning';
 import {
   countNewGalleryImages,
   getGalleryLastVisitedAt,
@@ -130,7 +131,7 @@ export const GalleryDashboardTile = () => {
 
     const loadGalleryPreview = async () => {
       try {
-        const response = await fetch(`${BASE_URL}assets/gallery/gallery.json`, { cache: 'no-store' });
+        const response = await fetch(getGalleryManifestPath(BASE_URL));
         if (!response.ok) {
           return;
         }

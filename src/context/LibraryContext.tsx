@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext } from 'react';
+import { getBookChapterContentPath, getBookManifestMetadataPath } from '../cacheVersioning';
 import { SourceType, SourceTypes } from '../constants';
 import { PatreonContext } from './PatreonContext';
 
@@ -9,6 +10,7 @@ export type ChapterSelectionResult = { ok: true } | { ok: false; reason: AccessD
 export type ChapterNavigationEntry = {
   chapterId?: string;
   chapter: string;
+  contentVersion?: string;
   title: string;
   isSecured: boolean;
   volume?: string;
@@ -187,6 +189,10 @@ const normalizeChapterEntry = (entry: ChapterNavigationEntry): ChapterNavigation
     isSecured: entry.isSecured === true,
   };
 
+  if (entry.contentVersion?.trim()) {
+    normalized.contentVersion = entry.contentVersion.trim();
+  }
+
   if (chapterId) {
     normalized.chapterId = chapterId;
   }
@@ -199,7 +205,7 @@ const normalizeChapterEntry = (entry: ChapterNavigationEntry): ChapterNavigation
 };
 
 const loadNavigationChaptersFromMetadata = async (book: SourceType): Promise<ChapterNavigationEntry[]> => {
-  const response = await fetch(`navigation-data/${book}_chapters.json`);
+  const response = await fetch(getBookManifestMetadataPath(book));
   if (!response.ok) {
     throw new Error(`Failed to load required chapter metadata file navigation-data/${book}_chapters.json`);
   }
@@ -280,6 +286,19 @@ export const getResolvedChapterPathForBook = async (book: SourceType, chapterRef
   return entry?.chapter || normalizeChapterPath(normalizedReference);
 };
 
+export const getChapterContentVersionForBook = async (
+  book: SourceType,
+  chapterReference: string
+): Promise<string | undefined> => {
+  const normalizedReference = normalizeChapterReference(chapterReference);
+  if (!normalizedReference) {
+    return undefined;
+  }
+
+  const entry = await resolveChapterEntryForBook(book, normalizedReference).catch(() => undefined);
+  return entry?.contentVersion;
+};
+
 export const getChapterRouteParameterForBook = async (
   book: SourceType,
   chapterReference: string
@@ -342,8 +361,8 @@ export function useLoadContent(setData: (data: string) => void) {
   const encryptionPasswordV2 = pContext?.encryptionPasswordV2;
 
   const loadContent = useCallback(
-    async (selectedBook: SourceType, selectedChapter: string, isSecured: boolean) => {
-      const path = `book-data/${selectedBook}/../${selectedChapter}`;
+    async (selectedBook: SourceType, selectedChapter: string, isSecured: boolean, contentVersion?: string) => {
+      const path = getBookChapterContentPath(selectedBook, selectedChapter, contentVersion);
       try {
         const response = await fetch(path);
         if (!response.ok) {

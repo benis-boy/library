@@ -1,6 +1,7 @@
 import { SwipeableDrawer, useMediaQuery, useTheme } from '@mui/material';
 import { Fragment, useContext, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { getBookNavigationHtmlPath } from '../cacheVersioning';
 import { SourceType } from '../constants';
 import { ConfigurationContext } from '../context/ConfigurationContext';
 import {
@@ -161,7 +162,7 @@ export const Navigator = ({
         <iframe
           ref={iframeRef}
           onLoad={() => injectStyles(iframeRef, { isDarkMode, selectedFont, fontSize })}
-          src={`navigation-data/${selectedBookOrDefault}_navigation.html`}
+          src={getBookNavigationHtmlPath(selectedBookOrDefault)}
           title="External HTML"
           width="100%"
           height="100%"
