@@ -14,6 +14,11 @@
 - `npm run deploy` - publishes `dist/` with `gh-pages` (runs `predeploy` -> `npm run build`).
 - There is no root test script.
 
+## Storybook testing
+- Use Storybook for interaction testing only.
+- Do not add or maintain purely visual stories, visual regression checks, or component showcase stories without meaningful interaction coverage.
+- Prefer real app flows or behavior-driven stories with `play` functions over isolated visual demos.
+
 ## Agent context guardrails
 - Do not read `.png` files unless explicitly required for the task; image files can consume too much context and hurt task performance.
 - Never stage changes on your own (`git add`, `git add -A`, `git add .`). Only stage files when the user explicitly requests it.

@@ -1,5 +1,5 @@
 export const BASE_URL = import.meta.env.BASE_URL;
-export const GALLERY_LAST_VISITED_AT_STORAGE_KEY = 'gallery:last-visited-at';
+const GALLERY_LAST_VISITED_AT_STORAGE_KEY = 'gallery:last-visited-at';
 
 export const toPublicAssetPath = (source: string) => {
   const normalized = source.trim().replace(/^\/+/, '');

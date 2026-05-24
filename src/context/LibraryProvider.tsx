@@ -10,8 +10,8 @@ import {
   getFirstChapterForBook,
   getChapterRouteParameterForBook,
   getResolvedChapterPathForBook,
-  getStoredChapterSelection,
   getStoredSelectedBook,
+  getStoredSelectedChapter,
   isLibrarySelectionStorageKey,
   LibraryContext,
   LibraryContextType,
@@ -22,10 +22,11 @@ import {
   useLoadContent,
 } from './LibraryContext';
 import { PatreonContext } from './PatreonContext';
+import { APP_STORAGE_CLEARED_EVENT } from '../localStorageReset';
 
 const getStoredLibrarySelection = () => {
   const selectedBook = getStoredSelectedBook();
-  const chapterSelection = getStoredChapterSelection(selectedBook);
+  const chapterSelection = getStoredSelectedChapter(selectedBook);
 
   return {
     selectedBook,
@@ -64,6 +65,17 @@ export const LibraryProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     clearLegacyChapterEncryptionKeys();
+  }, []);
+
+  useEffect(() => {
+    const handleAppStorageCleared = () => {
+      setLibraryData(buildInitialLibraryData());
+    };
+
+    window.addEventListener(APP_STORAGE_CLEARED_EVENT, handleAppStorageCleared);
+    return () => {
+      window.removeEventListener(APP_STORAGE_CLEARED_EVENT, handleAppStorageCleared);
+    };
   }, []);
 
   useEffect(() => {
@@ -252,7 +264,7 @@ export const LibraryProvider = ({ children }: { children: ReactNode }) => {
 
   const setSelectedBook = useCallback(
     async (book: SourceType, loadChapterToo: boolean): Promise<BookSelectionResult> => {
-      const chapterSelection = getStoredChapterSelection(book);
+      const chapterSelection = getStoredSelectedChapter(book);
       setSelection(book, chapterSelection, undefined);
 
       if (!loadChapterToo) {

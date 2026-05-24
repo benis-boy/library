@@ -49,8 +49,8 @@ export type LibraryContextType = {
   setSelectedChapter: (book: SourceType, chapter: string, secured?: boolean) => Promise<ChapterSelectionResult>;
 };
 
-export const LIBRARY_SELECTED_BOOK_KEY = 'SELECTED_BOOK';
-export const LIBRARY_SELECTED_CHAPTER_SUFFIX = '_SELECTED_CHAPTER';
+const LIBRARY_SELECTED_BOOK_KEY = 'SELECTED_BOOK';
+const LIBRARY_SELECTED_CHAPTER_SUFFIX = '_SELECTED_CHAPTER';
 const LEGACY_LIBRARY_ENCRYPTION_PREFIX = 'IS_ENCRYPTED_';
 
 export const DEFAULT_BOOK: SourceType = 'PSSJ';
@@ -101,7 +101,7 @@ export const normalizeChapterReference = (value: string | undefined): string | u
   return normalizeChapterPath(value);
 };
 
-export const normalizeChapterPath = (value: string | undefined): string | undefined => {
+const normalizeChapterPath = (value: string | undefined): string | undefined => {
   if (!value) {
     return undefined;
   }
@@ -124,7 +124,7 @@ export const parseReaderRoute = (bookParam: string | undefined, chapterParam: st
   return { book, chapter };
 };
 
-export const getSelectedChapterStorageKey = (book: SourceType) => `${book}${LIBRARY_SELECTED_CHAPTER_SUFFIX}`;
+const getSelectedChapterStorageKey = (book: SourceType) => `${book}${LIBRARY_SELECTED_CHAPTER_SUFFIX}`;
 
 export const isLibrarySelectionStorageKey = (key: string) =>
   key === LIBRARY_SELECTED_BOOK_KEY ||
@@ -165,8 +165,6 @@ export function setStoredChapterSelection(book: SourceType, chapter: string) {
 
   localStorage.setItem(getSelectedChapterStorageKey(book), normalized);
 }
-
-export const getStoredChapterSelection = getStoredSelectedChapter;
 
 export const LibraryContext = createContext<LibraryContextType | undefined>(undefined);
 
@@ -220,7 +218,7 @@ const loadNavigationChaptersFromMetadata = async (book: SourceType): Promise<Cha
     .filter((entry): entry is ChapterNavigationEntry => !!entry);
 };
 
-export const loadNavigationChapters = async (book: SourceType): Promise<ChapterNavigationEntry[]> => {
+const loadNavigationChapters = async (book: SourceType): Promise<ChapterNavigationEntry[]> => {
   const cached = chapterMetadataCache.get(book);
   if (cached) {
     return cached;
@@ -263,7 +261,7 @@ const findChapterEntry = (chapters: ChapterNavigationEntry[], chapterReference: 
   });
 };
 
-export const resolveChapterEntryForBook = async (
+const resolveChapterEntryForBook = async (
   book: SourceType,
   chapterReference: string
 ): Promise<ChapterNavigationEntry | undefined> => {

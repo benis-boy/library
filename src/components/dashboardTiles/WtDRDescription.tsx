@@ -1,18 +1,3 @@
-export const WtDRDescriptionShort = () => {
-  return (
-    <div>
-      <p>
-        <strong>An affront to life</strong> – she's cursed to exist.
-        <br />
-        A man pulls the trigger – the gun clicks empty. Once again, he forgot to load it.
-        <br />
-        No memories, no purpose – only the pull of a house that doesn't exist.
-      </p>
-      ...
-    </div>
-  );
-};
-
 const WtDRDescription = () => {
   return (
     <div className="px-2">

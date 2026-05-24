@@ -57,7 +57,7 @@ export const normalizeGalleryTag = (rawTag: string | null | undefined): string |
   return tag;
 };
 
-export const getGalleryTagGroup = (tag: string): GalleryTagGroup => {
+const getGalleryTagGroup = (tag: string): GalleryTagGroup => {
   if (tag.startsWith('a:')) {
     return 'artist';
   }
@@ -70,7 +70,7 @@ export const getGalleryTagGroup = (tag: string): GalleryTagGroup => {
   return 'other';
 };
 
-export const getGalleryTagLabel = (tag: string, translations: Record<string, string>) => {
+const getGalleryTagLabel = (tag: string, translations: Record<string, string>) => {
   const existing = translations[tag]?.trim();
   if (existing) {
     return existing;

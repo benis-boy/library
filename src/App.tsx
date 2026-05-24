@@ -31,7 +31,7 @@ const ROUTE_PATHS = {
 
 // color palette https://colorhunt.co/palette/09122c872341be3144e17564
 
-function InnerApp() {
+export function InnerApp() {
   const location = useLocation();
   const isReaderRoute = location.pathname.startsWith('/reader/');
   const isGalleryRoute = location.pathname === ROUTE_PATHS.gallery;

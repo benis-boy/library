@@ -9,7 +9,7 @@ import {
   getNextChapterForBook,
   getReaderRoute,
   getReaderRouteForChapter,
-  getStoredChapterSelection,
+  getStoredSelectedChapter,
   LibraryContext,
   normalizeChapterReference,
   normalizeRouteBookId,
@@ -55,7 +55,7 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
 
       if (!routeInfo) {
         const activeChapter =
-          (selectedBook === routeBook ? normalizeChapterReference(selectedChapter) : undefined) || getStoredChapterSelection(routeBook);
+          (selectedBook === routeBook ? normalizeChapterReference(selectedChapter) : undefined) || getStoredSelectedChapter(routeBook);
 
         if (activeChapter) {
           const currentPath = window.location.hash.replace(/^#/, '') || '/';
@@ -69,7 +69,7 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
             return;
           }
 
-          const firstSelectedChapter = getStoredChapterSelection(routeBook);
+          const firstSelectedChapter = getStoredSelectedChapter(routeBook);
           if (!firstSelectedChapter) {
             return;
           }
@@ -282,7 +282,7 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
               const currentChapter =
                 routeInfo?.chapter ||
                 (book && selectedBook === book ? normalizeChapterReference(selectedChapter) : undefined) ||
-                (book ? getStoredChapterSelection(book) : undefined);
+                (book ? getStoredSelectedChapter(book) : undefined);
               if (!book || !currentChapter) {
                 return;
               }

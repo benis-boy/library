@@ -13,6 +13,7 @@ import {
 import { SelectChangeEvent } from '@mui/material/Select/SelectInput';
 import React, { useContext } from 'react';
 import { ConfigurationContext } from '../context/ConfigurationContext';
+import { clearAppStorage } from '../localStorageReset';
 
 export const ConfigurationView = () => {
   const { isDarkMode, setIsDarkMode, selectedFont, setSelectedFont, fontSize, setFontSize, whiteTone, setWhiteTone } =
@@ -33,7 +34,7 @@ export const ConfigurationView = () => {
 
   const handleClearLocalFiles = () => {
     try {
-      localStorage.clear();
+      clearAppStorage();
       console.info('Local storage cleared successfully!');
     } catch (error) {
       console.error('Error clearing local storage:', error);

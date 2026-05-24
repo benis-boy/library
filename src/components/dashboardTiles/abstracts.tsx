@@ -6,10 +6,9 @@ import { SourceType } from '../../constants';
 import {
   getReaderRoute,
   getReaderRouteForChapter,
-  getStoredChapterSelection,
-  getStoredSelectedChapter,
   LibraryContext,
   LibraryContextType,
+  getStoredSelectedChapter,
 } from '../../context/LibraryContext';
 
 const readButtonClassName =
@@ -58,7 +57,7 @@ const useBookDashboardTile = ({ bookId, smallView }: { bookId: SourceType; small
       return;
     }
 
-    const storedChapter = getStoredChapterSelection(bbd.id);
+    const storedChapter = getStoredSelectedChapter(bbd.id);
     const targetRoute = storedChapter
       ? await getReaderRouteForChapter(bbd.id, storedChapter).catch(() => getReaderRoute(bbd.id, storedChapter))
       : getReaderRoute(bbd.id);

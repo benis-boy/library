@@ -1,6 +1,7 @@
-import { ReactNode, useEffect, useState } from 'react';
+import { ReactNode, useCallback, useEffect, useState } from 'react';
 import { MembershipData, PatreonContext, PatreonVerifierResponseBody } from './PatreonContext';
 import { SourceType } from '../constants';
+import { APP_STORAGE_CLEARED_EVENT } from '../localStorageReset';
 
 const PENDING_PATREON_LOGIN_KEY = 'PENDING_PATREON_LOGIN';
 const READER_HASH_PREFIX = '#/reader/';
@@ -81,7 +82,7 @@ export const PatreonProvider = ({ children }: { children: ReactNode }) => {
   const CLIENT_ID = 'DCmpYjAt5oF-1poN2N_hW22VXTuz8BNIOPk1yeoctffuvobAJCu8I7N7fKc1ngMp';
   const REDIRECT_URI = 'https://benis-boy.github.io/library/';
 
-  const resetSession = (clearPendingLogin: boolean) => {
+  const resetSession = useCallback((clearPendingLogin: boolean) => {
     localStorage.removeItem('patreon_token');
     if (clearPendingLogin) {
       clearPendingPatreonLogin();
@@ -94,7 +95,18 @@ export const PatreonProvider = ({ children }: { children: ReactNode }) => {
       WtDR: 'unset',
       SoWB: 'not-set'
     });
-  };
+  }, []);
+
+  useEffect(() => {
+    const handleAppStorageCleared = () => {
+      resetSession(true);
+    };
+
+    window.addEventListener(APP_STORAGE_CLEARED_EVENT, handleAppStorageCleared);
+    return () => {
+      window.removeEventListener(APP_STORAGE_CLEARED_EVENT, handleAppStorageCleared);
+    };
+  }, [resetSession]);
 
   // Check authentication on mount
   useEffect(() => {
@@ -205,7 +217,7 @@ export const PatreonProvider = ({ children }: { children: ReactNode }) => {
     } else {
       setIsAuthResolving(false);
     }
-  }, []);
+  }, [resetSession]);
 
   // One-Time force relogin
   useEffect(() => {
@@ -215,7 +227,7 @@ export const PatreonProvider = ({ children }: { children: ReactNode }) => {
       resetSession(false);
       window.location.reload();
     }
-  }, []);
+  }, [resetSession]);
 
   if (isAuthResolving) {
     return null;
