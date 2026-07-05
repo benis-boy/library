@@ -65,9 +65,22 @@ const redisSet = async (key, value) => {
   await redisCommand(['SET', key, JSON.stringify(value)]);
 };
 
+const redisDelete = async (key) => {
+  await redisCommand(['DEL', key]);
+};
+
 const toPageLocationKey = (locationId) => `${locationId.bookId}:${locationId.chapterId}`;
 
-const toPageThreadsRedisKey = (locationId) => `${COMMENT_KEY_PREFIX}:page:${toPageLocationKey(locationId)}:threads`;
+const toPageThreadKeysRedisKey = (locationId) => `${COMMENT_KEY_PREFIX}:page:${toPageLocationKey(locationId)}:thread-keys`;
+
+const toThreadLocationKey = (locationId) => {
+  const linePart = typeof locationId.lineNumber === 'number' ? locationId.lineNumber : 'chapter';
+  return `${locationId.bookId}:${locationId.chapterId}:${linePart}`;
+};
+
+const toThreadRedisKey = (thread) => {
+  return `${COMMENT_KEY_PREFIX}:thread:${toThreadLocationKey(thread.locationId)}:${thread.rootCommentId}`;
+};
 
 const toCommentLikedUserNamesRedisKey = (commentId) => `${COMMENT_KEY_PREFIX}:comment:${commentId}:likes`;
 
@@ -136,13 +149,33 @@ const isThreadMutation = (value) => {
   }
 };
 
-const getThreadsForPage = async (locationId) => {
-  const value = await redisGet(toPageThreadsRedisKey(locationId));
-  return Array.isArray(value) ? value : [];
+const getThreadKeysForPage = async (locationId) => {
+  const value = await redisGet(toPageThreadKeysRedisKey(locationId));
+  return Array.isArray(value) ? value.filter((threadKey) => typeof threadKey === 'string') : [];
 };
 
-const setThreadsForPage = async (locationId, threads) => {
-  await redisSet(toPageThreadsRedisKey(locationId), threads);
+const setThreadKeysForPage = async (locationId, threadKeys) => {
+  await redisSet(toPageThreadKeysRedisKey(locationId), Array.from(new Set(threadKeys)));
+};
+
+const getThreadByKey = async (threadKey) => {
+  const value = await redisGet(threadKey);
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+};
+
+const getThreadsByKeys = async (threadKeys) => {
+  const threadResults = await Promise.all(threadKeys.map((threadKey) => getThreadByKey(threadKey)));
+  return threadResults.filter((thread) => thread !== null);
+};
+
+const setThread = async (thread) => {
+  const threadKey = toThreadRedisKey(thread);
+  await redisSet(threadKey, thread);
+  return threadKey;
+};
+
+const deleteThread = async (threadKey) => {
+  await redisDelete(threadKey);
 };
 
 const getLikedUserNamesForComment = async (commentId) => {
@@ -156,104 +189,138 @@ const setLikedUserNamesForComment = async (commentId, likedUserNames) => {
 
 const includesComment = (thread, commentId) => Boolean(thread.commentsById?.[commentId]);
 
-const replaceOrInsertThread = (threads, nextThread) => {
-  const existingIndex = threads.findIndex((thread) => thread.rootCommentId === nextThread.rootCommentId);
-  if (existingIndex === -1) {
-    return [...threads, nextThread];
-  }
+const isChapterThread = (thread) => thread.locationId?.lineNumber === undefined;
 
-  return threads.map((thread, index) => (index === existingIndex ? nextThread : thread));
-};
+const splitThreadKeysByLocation = async (threadKeys) => {
+  const entries = await Promise.all(
+    threadKeys.map(async (threadKey) => {
+      const thread = await getThreadByKey(threadKey);
+      return thread ? { threadKey, thread } : null;
+    })
+  );
 
-const upsertComment = (threads, mutation) => {
-  let didMutate = false;
-  const nextThreads = threads.map((thread) => {
-    if (didMutate || !includesComment(thread, mutation.replyingTo)) {
-      return thread;
+  const chapterThreads = [];
+  const lineThreadKeys = [];
+
+  for (const entry of entries) {
+    if (!entry) {
+      continue;
     }
 
-    didMutate = true;
-    const replyingToComment = thread.commentsById[mutation.replyingTo];
-    const nextReplyIds = replyingToComment.replyIds.includes(mutation.commentId)
-      ? replyingToComment.replyIds
-      : [...replyingToComment.replyIds, mutation.commentId];
+    if (isChapterThread(entry.thread)) {
+      chapterThreads.push(entry.thread);
+    } else {
+      lineThreadKeys.push(entry.threadKey);
+    }
+  }
 
+  return { chapterThreads, lineThreadKeys };
+};
+
+const findThreadEntryByCommentId = async (threadKeys, commentId) => {
+  for (const threadKey of threadKeys) {
+    const thread = await getThreadByKey(threadKey);
+    if (thread && includesComment(thread, commentId)) {
+      return { threadKey, thread };
+    }
+  }
+
+  return null;
+};
+
+const upsertCommentInThread = (thread, mutation) => {
+  if (includesComment(thread, mutation.commentId)) {
     return {
       ...thread,
       commentsById: {
         ...thread.commentsById,
-        [mutation.replyingTo]: {
-          ...replyingToComment,
-          replyIds: nextReplyIds,
+        [mutation.commentId]: {
+          ...mutation.comment,
+          replyIds: thread.commentsById[mutation.commentId].replyIds,
         },
-        [mutation.commentId]: mutation.comment,
       },
     };
-  });
-
-  return [nextThreads, didMutate];
-};
-
-const deleteComment = (threads, mutation) => {
-  let didMutate = false;
-  const nextThreads = threads.flatMap((thread) => {
-    if (didMutate || !includesComment(thread, mutation.commentId)) {
-      return [thread];
-    }
-
-    didMutate = true;
-    if (thread.rootCommentId === mutation.commentId) {
-      return [];
-    }
-
-    const nextCommentsById = {};
-    for (const [commentId, comment] of Object.entries(thread.commentsById)) {
-      if (commentId === mutation.commentId) {
-        continue;
-      }
-
-      nextCommentsById[commentId] =
-        commentId === mutation.wasReplyingTo
-          ? {
-              ...comment,
-              replyIds: comment.replyIds.filter((replyId) => replyId !== mutation.commentId),
-            }
-          : comment;
-    }
-
-    if (!nextCommentsById[thread.rootCommentId]) {
-      return [];
-    }
-
-    return [
-      {
-        ...thread,
-        commentsById: nextCommentsById,
-      },
-    ];
-  });
-
-  return [nextThreads, didMutate];
-};
-
-const applyThreadArrayMutation = (threads, mutation) => {
-  switch (mutation.type) {
-    case 'start-thread':
-      return [
-        replaceOrInsertThread(threads, {
-          locationId: mutation.locationId,
-          rootCommentId: mutation.rootCommentId,
-          commentsById: mutation.commentsById,
-        }),
-        true,
-      ];
-    case 'upsert-comment':
-      return upsertComment(threads, mutation);
-    case 'delete-comment':
-      return deleteComment(threads, mutation);
-    default:
-      return [threads, false];
   }
+
+  if (!includesComment(thread, mutation.replyingTo)) {
+    return null;
+  }
+
+  const replyingToComment = thread.commentsById[mutation.replyingTo];
+  const nextReplyIds = replyingToComment.replyIds.includes(mutation.commentId)
+    ? replyingToComment.replyIds
+    : [...replyingToComment.replyIds, mutation.commentId];
+
+  return {
+    ...thread,
+    commentsById: {
+      ...thread.commentsById,
+      [mutation.replyingTo]: {
+        ...replyingToComment,
+        replyIds: nextReplyIds,
+      },
+      [mutation.commentId]: mutation.comment,
+    },
+  };
+};
+
+const collectCommentSubtreeIds = (commentsById, rootCommentId) => {
+  const idsToDelete = new Set();
+  const stack = [rootCommentId];
+
+  while (stack.length > 0) {
+    const commentId = stack.pop();
+    if (!commentId || idsToDelete.has(commentId)) {
+      continue;
+    }
+
+    idsToDelete.add(commentId);
+    const comment = commentsById[commentId];
+    if (!comment) {
+      continue;
+    }
+
+    for (const replyId of comment.replyIds) {
+      stack.push(replyId);
+    }
+  }
+
+  return idsToDelete;
+};
+
+const deleteCommentFromThread = (thread, mutation) => {
+  if (!includesComment(thread, mutation.commentId)) {
+    return { didMutate: false, thread };
+  }
+
+  if (thread.rootCommentId === mutation.commentId) {
+    return { didMutate: true, thread: null };
+  }
+
+  const commentIdsToDelete = collectCommentSubtreeIds(thread.commentsById, mutation.commentId);
+  const nextCommentsById = {};
+  for (const [commentId, comment] of Object.entries(thread.commentsById)) {
+    if (commentIdsToDelete.has(commentId)) {
+      continue;
+    }
+
+    nextCommentsById[commentId] = {
+      ...comment,
+      replyIds: comment.replyIds.filter((replyId) => !commentIdsToDelete.has(replyId)),
+    };
+  }
+
+  if (!nextCommentsById[thread.rootCommentId]) {
+    return { didMutate: true, thread: null };
+  }
+
+  return {
+    didMutate: true,
+    thread: {
+      ...thread,
+      commentsById: nextCommentsById,
+    },
+  };
 };
 
 const handleGet = async (event) => {
@@ -286,9 +353,13 @@ const handleGet = async (event) => {
     return json(400, { error: 'bookId and chapterId are required.' });
   }
 
+  const threadKeys = await getThreadKeysForPage(pageLocationId);
+  const { chapterThreads, lineThreadKeys } = await splitThreadKeysByLocation(threadKeys);
+
   return json(200, {
     pageLocationId,
-    threads: await getThreadsForPage(pageLocationId),
+    chapterThreads,
+    lineThreadKeys,
   });
 };
 
@@ -351,20 +422,78 @@ const handlePost = async (event) => {
           chapterId: mutation.locationId.chapterId,
         }
       : request.pageLocationId;
-  const threads = await getThreadsForPage(pageLocationId);
-  const [nextThreads, didMutate] = applyThreadArrayMutation(threads, mutation);
+  const threadKeys = await getThreadKeysForPage(pageLocationId);
 
-  if (!didMutate) {
-    return json(404, { error: 'Could not find a matching thread/comment for this mutation.' });
+  if (mutation.type === 'start-thread') {
+    const nextThread = {
+      locationId: mutation.locationId,
+      rootCommentId: mutation.rootCommentId,
+      commentsById: mutation.commentsById,
+    };
+    const threadKey = await setThread(nextThread);
+    await setThreadKeysForPage(pageLocationId, [...threadKeys.filter((existingThreadKey) => existingThreadKey !== threadKey), threadKey]);
+
+    const nextThreadKeys = await getThreadKeysForPage(pageLocationId);
+    const { chapterThreads, lineThreadKeys } = await splitThreadKeysByLocation(nextThreadKeys);
+    return json(200, {
+      type: 'threads-updated',
+      pageLocationId,
+      chapterThreads,
+      lineThreadKeys,
+    });
   }
 
-  await setThreadsForPage(pageLocationId, nextThreads);
+  if (mutation.type === 'upsert-comment') {
+    const entry = await findThreadEntryByCommentId(threadKeys, mutation.replyingTo);
+    if (!entry) {
+      return json(404, { error: 'Could not find a matching thread/comment for this mutation.' });
+    }
 
-  return json(200, {
-    type: 'threads-updated',
-    pageLocationId,
-    threads: nextThreads,
-  });
+    const nextThread = upsertCommentInThread(entry.thread, mutation);
+    if (!nextThread) {
+      return json(404, { error: 'Could not find a matching thread/comment for this mutation.' });
+    }
+
+    await setThread(nextThread);
+    const { chapterThreads, lineThreadKeys } = await splitThreadKeysByLocation(threadKeys);
+    return json(200, {
+      type: 'threads-updated',
+      pageLocationId,
+      chapterThreads,
+      lineThreadKeys,
+    });
+  }
+
+  if (mutation.type === 'delete-comment') {
+    const entry = await findThreadEntryByCommentId(threadKeys, mutation.commentId);
+    if (!entry) {
+      return json(404, { error: 'Could not find a matching thread/comment for this mutation.' });
+    }
+
+    const result = deleteCommentFromThread(entry.thread, mutation);
+    if (!result.didMutate) {
+      return json(404, { error: 'Could not find a matching thread/comment for this mutation.' });
+    }
+
+    const nextThreadKeys = threadKeys.filter((threadKey) => threadKey !== entry.threadKey);
+    if (result.thread) {
+      await setThread(result.thread);
+      nextThreadKeys.push(entry.threadKey);
+    } else {
+      await deleteThread(entry.threadKey);
+    }
+
+    await setThreadKeysForPage(pageLocationId, nextThreadKeys);
+    const { chapterThreads, lineThreadKeys } = await splitThreadKeysByLocation(nextThreadKeys);
+    return json(200, {
+      type: 'threads-updated',
+      pageLocationId,
+      chapterThreads,
+      lineThreadKeys,
+    });
+  }
+
+  return json(400, { error: 'Unsupported mutation type.' });
 };
 
 exports.handler = async (event) => {

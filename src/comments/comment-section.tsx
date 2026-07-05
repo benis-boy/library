@@ -10,6 +10,7 @@ type CommentInputProps = {
   placeholder?: string;
   submitLabel?: string;
   forceAnonymous?: boolean;
+  initialText?: string;
   onCancel?: () => void;
   onSubmit: (text: string, commentAnonymously: boolean) => Promise<void> | void;
 };
@@ -63,6 +64,7 @@ type LoadedComments = {
 
 const commentLoadCache = new Map<string, { cachedAt: number; promise: Promise<LoadedComments> }>();
 const COMMENT_LOAD_CACHE_MS = 1000;
+const LIKE_MUTATION_DEBOUNCE_MS = 5000;
 
 const getCommentLoadCacheKey = (pageLocationId: PageLocationId, signedInUserName: string | null) => {
   return `${pageLocationId.bookId}:${pageLocationId.chapterId}:${signedInUserName ?? 'anonymous'}`;
@@ -105,14 +107,19 @@ const CommentInput = ({
   placeholder = 'Add a comment...',
   submitLabel = 'Comment',
   forceAnonymous = false,
+  initialText = '',
   onCancel,
   onSubmit,
 }: CommentInputProps) => {
-  const [text, setText] = useState('');
+  const [text, setText] = useState(initialText);
   const [isFocused, setIsFocused] = useState(autoFocus);
   const [commentAnonymously, setCommentAnonymously] = useState(forceAnonymous);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const showActions = isFocused || text.trim().length > 0;
+
+  useEffect(() => {
+    setText(initialText);
+  }, [initialText]);
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -216,9 +223,13 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
   const [likeCountsByCommentId, setLikeCountsByCommentId] = useState<Record<CommentId, number>>({});
   const [commentsLikedByUser, setCommentsLikedByUser] = useState<Set<CommentId>>(() => new Set<CommentId>());
   const [replyingToCommentId, setReplyingToCommentId] = useState<CommentId | null>(null);
+  const [editingCommentId, setEditingCommentId] = useState<CommentId | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const syncedCommentsLikedByUserRef = useRef<Set<CommentId>>(new Set<CommentId>());
+  const pendingLikeStatesRef = useRef(new Map<CommentId, boolean>());
+  const likeDebounceTimersRef = useRef(new Map<CommentId, number>());
 
   useEffect(() => {
     let cancelled = false;
@@ -236,6 +247,12 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
         setThreads(loadedComments.threads);
         setLikeCountsByCommentId(loadedComments.likeCountsByCommentId);
         setCommentsLikedByUser(new Set(loadedComments.commentsLikedByUserSet));
+        syncedCommentsLikedByUserRef.current = new Set(loadedComments.commentsLikedByUserSet);
+        pendingLikeStatesRef.current.clear();
+        for (const timerId of likeDebounceTimersRef.current.values()) {
+          window.clearTimeout(timerId);
+        }
+        likeDebounceTimersRef.current.clear();
       } catch (caughtError) {
         if (!cancelled) {
           setError(caughtError instanceof Error ? caughtError.message : 'Could not load comments.');
@@ -254,10 +271,32 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
     };
   }, [pageLocationId, signedInUserName]);
 
+  useEffect(() => {
+    const likeDebounceTimers = likeDebounceTimersRef.current;
+
+    return () => {
+      for (const timerId of likeDebounceTimers.values()) {
+        window.clearTimeout(timerId);
+      }
+      likeDebounceTimers.clear();
+    };
+  }, []);
+
   const commentCount = useMemo(() => countThreadComments(threads), [threads]);
 
   const applyThreadsResponse = (nextThreads: Thread[]) => {
     setThreads(nextThreads);
+  };
+
+  const findComment = (commentId: CommentId) => {
+    for (const thread of threads) {
+      const comment = thread.commentsById[commentId];
+      if (comment) {
+        return { thread, comment };
+      }
+    }
+
+    return null;
   };
 
   const handleStartThread = async (text: string, commentAnonymously: boolean) => {
@@ -314,6 +353,74 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
     }
   };
 
+  const handleEdit = async (text: string, commentAnonymously: boolean, commentId: CommentId) => {
+    const existing = findComment(commentId);
+    if (!existing) {
+      setError('Could not find comment to edit.');
+      return;
+    }
+
+    const userName = forceAnonymous || commentAnonymously ? null : signedInUserName;
+
+    setIsSubmitting(true);
+    setError(null);
+
+    try {
+      const response = await sendThreadMutation(pageLocationId, {
+        type: 'upsert-comment',
+        commentId,
+        replyingTo: commentId,
+        comment: {
+          ...existing.comment,
+          text,
+          userName,
+          timestamp: Date.now(),
+        },
+      });
+
+      if (response.type === 'threads-updated') {
+        applyThreadsResponse(response.threads);
+        setEditingCommentId(null);
+      }
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : 'Could not edit comment.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDelete = async (commentId: CommentId) => {
+    const confirmed = window.confirm('Delete this comment and all replies to it?');
+    if (!confirmed) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    setError(null);
+
+    try {
+      const response = await sendThreadMutation(pageLocationId, {
+        type: 'delete-comment',
+        commentId,
+        wasReplyingTo: commentId,
+      });
+
+      if (response.type === 'threads-updated') {
+        applyThreadsResponse(response.threads);
+        if (replyingToCommentId === commentId) {
+          setReplyingToCommentId(null);
+        }
+        if (editingCommentId === commentId) {
+          setEditingCommentId(null);
+        }
+      }
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : 'Could not delete comment.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleToggleLike = async ({ commentId, shouldLike }: { commentId: CommentId; shouldLike: boolean }) => {
     if (!signedInUserName) {
       return;
@@ -339,33 +446,59 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
       [commentId]: Math.max(0, (previousCounts[commentId] ?? 0) + (shouldLike ? 1 : -1)),
     }));
 
+    pendingLikeStatesRef.current.set(commentId, shouldLike);
+
+    const existingTimer = likeDebounceTimersRef.current.get(commentId);
+    if (existingTimer !== undefined) {
+      window.clearTimeout(existingTimer);
+    }
+
+    const timerId = window.setTimeout(() => {
+      void flushPendingLike(commentId, signedInUserName);
+    }, LIKE_MUTATION_DEBOUNCE_MS);
+    likeDebounceTimersRef.current.set(commentId, timerId);
+  };
+
+  const flushPendingLike = async (commentId: CommentId, userName: string) => {
+    const desiredLikedState = pendingLikeStatesRef.current.get(commentId);
+    if (desiredLikedState === undefined) {
+      return;
+    }
+
+    pendingLikeStatesRef.current.delete(commentId);
+    const timerId = likeDebounceTimersRef.current.get(commentId);
+    if (timerId !== undefined) {
+      window.clearTimeout(timerId);
+      likeDebounceTimersRef.current.delete(commentId);
+    }
+
+    const syncedLikedState = syncedCommentsLikedByUserRef.current.has(commentId);
+    if (desiredLikedState === syncedLikedState) {
+      return;
+    }
+
     try {
       const response = await sendThreadMutation(pageLocationId, {
-        type: shouldLike ? 'add-comment-like' : 'remove-comment-like',
+        type: desiredLikedState ? 'add-comment-like' : 'remove-comment-like',
         commentId,
-        userName: signedInUserName,
+        userName,
       });
 
-      if (response.type === 'comment-liked-users-updated') {
-        setLikeCountsByCommentId((previousCounts) => ({
-          ...previousCounts,
-          [commentId]: response.likeCount,
-        }));
+      if (response.type !== 'comment-liked-users-updated') {
+        return;
       }
-    } catch (caughtError) {
-      setCommentsLikedByUser((previousSet) => {
-        const nextSet = new Set(previousSet);
-        if (previousLikedByUser) {
-          nextSet.add(commentId);
-        } else {
-          nextSet.delete(commentId);
-        }
-        return nextSet;
-      });
+
+      syncedCommentsLikedByUserRef.current = new Set(syncedCommentsLikedByUserRef.current);
+      if (desiredLikedState) {
+        syncedCommentsLikedByUserRef.current.add(commentId);
+      } else {
+        syncedCommentsLikedByUserRef.current.delete(commentId);
+      }
       setLikeCountsByCommentId((previousCounts) => ({
         ...previousCounts,
-        [commentId]: Math.max(0, (previousCounts[commentId] ?? 0) + (shouldLike ? -1 : 1)),
+        [commentId]: response.likeCount,
       }));
+    } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : 'Could not update like.');
     }
   };
@@ -392,10 +525,31 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
             likeCountsByCommentId={likeCountsByCommentId}
             commentsLikedByUser={commentsLikedByUser}
             actionsDisabled={isSubmitting}
-            onReply={({ replyToCommentId }) => setReplyingToCommentId(replyToCommentId)}
+            onReply={({ replyToCommentId }) => {
+              setEditingCommentId(null);
+              setReplyingToCommentId(replyToCommentId);
+            }}
             onToggleLike={signedInUserName ? (action) => void handleToggleLike(action) : undefined}
+            onEdit={({ commentId }) => {
+              setReplyingToCommentId(null);
+              setEditingCommentId(commentId);
+            }}
+            onDelete={({ commentId }) => void handleDelete(commentId)}
             renderAfterComment={(commentId) =>
-              replyingToCommentId === commentId ? (
+              editingCommentId === commentId ? (
+                <div className="mt-3 pl-2">
+                  <CommentInput
+                    autoFocus
+                    disabled={isSubmitting}
+                    forceAnonymous={forceAnonymous}
+                    initialText={findComment(commentId)?.comment.text ?? ''}
+                    placeholder="Edit your comment..."
+                    submitLabel="Comment"
+                    onCancel={() => setEditingCommentId(null)}
+                    onSubmit={(text, commentAnonymously) => handleEdit(text, commentAnonymously, commentId)}
+                  />
+                </div>
+              ) : replyingToCommentId === commentId ? (
                 <div className="mt-3 pl-2">
                   <CommentInput
                     autoFocus

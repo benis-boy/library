@@ -4,6 +4,8 @@ export type CommentsMutationResponse =
   | {
       type: 'threads-updated';
       pageLocationId: PageLocationId;
+      chapterThreads: Thread[];
+      lineThreadKeys: string[];
       threads: Thread[];
     }
   | {
@@ -13,10 +15,18 @@ export type CommentsMutationResponse =
       likeCount: number;
     };
 
+type RawCommentsMutationResponse =
+  | Omit<Extract<CommentsMutationResponse, { type: 'threads-updated' }>, 'threads'>
+  | Extract<CommentsMutationResponse, { type: 'comment-liked-users-updated' }>;
+
 export type FetchPageThreadsResponse = {
   pageLocationId: PageLocationId;
+  chapterThreads: Thread[];
+  lineThreadKeys: string[];
   threads: Thread[];
 };
+
+type RawFetchPageThreadsResponse = Omit<FetchPageThreadsResponse, 'threads'>;
 
 export type FetchCommentLikedUserNamesResponse = {
   likedUserNamesByCommentId: Record<CommentId, CommentLikedUserNames>;
@@ -50,7 +60,11 @@ export const fetchThreadsForPage = async (pageLocationId: PageLocationId) => {
   });
 
   const response = await fetch(`${COMMENTS_FUNCTION_URL}?${searchParams.toString()}`);
-  return parseJsonResponse<FetchPageThreadsResponse>(response);
+  const data = await parseJsonResponse<RawFetchPageThreadsResponse>(response);
+  return {
+    ...data,
+    threads: data.chapterThreads,
+  };
 };
 
 export const fetchCommentLikedUserNames = async (commentIds: CommentId[], signedInUserName?: string | null): Promise<CommentLikesForViewer> => {
@@ -82,5 +96,13 @@ export const sendThreadMutation = async (pageLocationId: PageLocationId, mutatio
     body: JSON.stringify({ pageLocationId, mutation }),
   });
 
-  return parseJsonResponse<CommentsMutationResponse>(response);
+  const data = await parseJsonResponse<RawCommentsMutationResponse>(response);
+  if (data.type !== 'threads-updated') {
+    return data;
+  }
+
+  return {
+    ...data,
+    threads: data.chapterThreads,
+  };
 };

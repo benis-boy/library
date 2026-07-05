@@ -19,6 +19,10 @@ type ToggleLikeAction = {
   shouldLike: boolean;
 };
 
+type CommentEditAction = {
+  commentId: CommentId;
+};
+
 type CommentSlotRender = (commentId: CommentId) => ReactNode;
 
 export type CommentProps = {
@@ -33,6 +37,8 @@ export type CommentProps = {
   resolveUserName?: (userName: string | null) => string;
   onReply?: (action: ReplyAction) => void;
   onToggleLike?: (action: ToggleLikeAction) => void;
+  onEdit?: (action: CommentEditAction) => void;
+  onDelete?: (action: CommentEditAction) => void;
 };
 
 const DEFAULT_MAX_DEPTH_INDENT = 8;
@@ -97,6 +103,8 @@ export const Comment = ({
   resolveUserName = getCommentUserName,
   onReply,
   onToggleLike,
+  onEdit,
+  onDelete,
 }: CommentProps) => {
   const displayUserName = resolveUserName(comment.userName);
   const timestampLabel = formatTimestamp(comment.timestamp);
@@ -115,12 +123,43 @@ export const Comment = ({
       }`}
       data-comment-id={commentId}
     >
-      <header className="mb-2 flex flex-wrap items-center gap-2 text-sm text-slate-600">
-        <strong className="text-slate-900">{displayUserName}</strong>
-        <span aria-hidden="true">-</span>
-        <time dateTime={dateTime} title={dateTime ? new Date(comment.timestamp).toLocaleString() : undefined}>
-          {timestampLabel}
-        </time>
+      <header className="mb-2 flex flex-wrap items-center justify-between gap-2 text-sm text-slate-600">
+        <div className="flex flex-wrap items-center gap-2">
+          <strong className="text-slate-900">{displayUserName}</strong>
+          <span aria-hidden="true">-</span>
+          <time dateTime={dateTime} title={dateTime ? new Date(comment.timestamp).toLocaleString() : undefined}>
+            {timestampLabel}
+          </time>
+        </div>
+        {onEdit || onDelete ? (
+          <details className="relative">
+            <summary className="flex h-7 w-7 cursor-pointer list-none items-center justify-center rounded-full text-lg leading-none text-slate-500 hover:bg-slate-100 hover:text-slate-900">
+              <span aria-label="Comment actions">...</span>
+            </summary>
+            <div className="absolute right-0 z-10 mt-1 min-w-28 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 text-sm shadow-lg">
+              {onEdit ? (
+                <button
+                  type="button"
+                  onClick={() => onEdit({ commentId })}
+                  disabled={actionsDisabled}
+                  className="block w-full px-3 py-2 text-left text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Edit
+                </button>
+              ) : null}
+              {onDelete ? (
+                <button
+                  type="button"
+                  onClick={() => onDelete({ commentId })}
+                  disabled={actionsDisabled}
+                  className="block w-full px-3 py-2 text-left text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Delete
+                </button>
+              ) : null}
+            </div>
+          </details>
+        ) : null}
       </header>
 
       <p className="whitespace-pre-wrap text-sm leading-6 text-slate-900">{comment.text}</p>
@@ -181,6 +220,8 @@ export type ThreadProps = {
   resolveUserName?: (userName: string | null) => string;
   onReply?: (action: ReplyAction) => void;
   onToggleLike?: (action: ToggleLikeAction) => void;
+  onEdit?: (action: CommentEditAction) => void;
+  onDelete?: (action: CommentEditAction) => void;
   renderAfterComment?: CommentSlotRender;
   emptyState?: ReactNode;
 };
@@ -217,6 +258,8 @@ export const Thread = ({
   resolveUserName,
   onReply,
   onToggleLike,
+  onEdit,
+  onDelete,
   renderAfterComment,
   emptyState,
 }: ThreadProps) => {
@@ -251,6 +294,8 @@ export const Thread = ({
     const nextBranch = new Set(branch);
     nextBranch.add(commentId);
     const shouldHighlight = Boolean(signedInUserName && comment.userName === signedInUserName);
+    const canEdit = Boolean(signedInUserName && comment.userName === signedInUserName);
+    const canDelete = canEdit || signedInUserName === 'B. Warnecke';
     const likeCount = likeCountsByCommentId[commentId] ?? 0;
     const likedByViewer = commentsLikedByUser?.has(commentId) ?? false;
 
@@ -268,6 +313,8 @@ export const Thread = ({
           resolveUserName={resolveUserName}
           onReply={onReply}
           onToggleLike={onToggleLike}
+          onEdit={canEdit ? onEdit : undefined}
+          onDelete={canDelete ? onDelete : undefined}
         />
         {renderAfterComment?.(commentId)}
         {childIds.length > 0 ? (
