@@ -2,30 +2,27 @@ import { ReactNode, useMemo } from 'react';
 import {
   Comment as CommentModel,
   CommentId,
-  Thread as ThreadModel,
-  ThreadId,
   TimestampMs,
   getCommentUserName,
+  Thread as ThreadModel,
 } from './dataModel';
 import { ThreadGraphIssue, buildThreadGraph, getOrphanRootCommentIds } from './graph-utils';
 import heartEmptyUrl from './heart_empty.svg';
 import heartFilledUrl from './heart_filled.svg';
 
 type ReplyAction = {
-  threadId: ThreadId;
   replyToCommentId: CommentId;
 };
 
 type ToggleLikeAction = {
-  threadId: ThreadId;
   commentId: CommentId;
   shouldLike: boolean;
 };
 
 export type CommentProps = {
-  threadId: ThreadId;
   commentId: CommentId;
   comment: CommentModel;
+  likeCount: number;
   highlighted?: boolean;
   isDisconnected?: boolean;
   likedByViewer?: boolean;
@@ -87,9 +84,9 @@ const toDateTimeAttribute = (timestamp: TimestampMs) => {
 };
 
 export const Comment = ({
-  threadId,
   commentId,
   comment,
+  likeCount,
   highlighted = false,
   isDisconnected = false,
   likedByViewer = false,
@@ -140,7 +137,7 @@ export const Comment = ({
       <footer className="mt-3 flex items-center gap-3 text-xs">
         <button
           type="button"
-          onClick={() => onReply?.({ threadId, replyToCommentId: commentId })}
+          onClick={() => onReply?.({ replyToCommentId: commentId })}
           disabled={actionsDisabled || !onReply}
           className="rounded-full px-2 py-1 font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
         >
@@ -149,7 +146,7 @@ export const Comment = ({
         <button
           type="button"
           aria-label={likeButtonLabel}
-          onClick={() => onToggleLike?.({ threadId, commentId, shouldLike: !likedByViewer })}
+          onClick={() => onToggleLike?.({ commentId, shouldLike: !likedByViewer })}
           disabled={actionsDisabled || !onToggleLike}
           className="group relative flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-rose-50 active:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
         >
@@ -161,8 +158,8 @@ export const Comment = ({
             aria-hidden="true"
           />
         </button>
-        <span className="text-slate-500" aria-label={`Like count ${comment.likeCount}`}>
-          {comment.likeCount} like{comment.likeCount === 1 ? '' : 's'}
+        <span className="text-slate-500" aria-label={`Like count ${likeCount}`}>
+          {likeCount} like{likeCount === 1 ? '' : 's'}
         </span>
       </footer>
     </article>
@@ -173,7 +170,8 @@ export type ThreadProps = {
   thread: ThreadModel;
   className?: string;
   signedInUserName?: string | null;
-  likedCommentIds?: ReadonlySet<CommentId>;
+  likeCountsByCommentId?: Partial<Record<CommentId, number>>;
+  commentsLikedByUser?: ReadonlySet<CommentId>;
   showDiagnostics?: boolean;
   actionsDisabled?: boolean;
   maxDepthIndent?: number;
@@ -207,7 +205,8 @@ export const Thread = ({
   thread,
   className,
   signedInUserName,
-  likedCommentIds,
+  likeCountsByCommentId = {},
+  commentsLikedByUser,
   showDiagnostics = false,
   actionsDisabled = false,
   maxDepthIndent = DEFAULT_MAX_DEPTH_INDENT,
@@ -248,16 +247,18 @@ export const Thread = ({
     const nextBranch = new Set(branch);
     nextBranch.add(commentId);
     const shouldHighlight = Boolean(signedInUserName && comment.userName === signedInUserName);
+    const likeCount = likeCountsByCommentId[commentId] ?? 0;
+    const likedByViewer = commentsLikedByUser?.has(commentId) ?? false;
 
     return (
       <div key={commentId} className="space-y-3">
         <Comment
-          threadId={thread.id}
           commentId={commentId}
           comment={comment}
+          likeCount={likeCount}
           highlighted={shouldHighlight}
           isDisconnected={isDisconnected}
-          likedByViewer={likedCommentIds?.has(commentId) ?? false}
+          likedByViewer={likedByViewer}
           actionsDisabled={actionsDisabled}
           formatTimestamp={formatTimestamp}
           resolveUserName={resolveUserName}

@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { expect, waitFor, within } from 'storybook/test';
 import '../index.css';
 import { Thread } from './comments';
-import type { Comment as CommentModel, CommentId, Thread as ThreadModel, TimestampMs } from './dataModel';
+import type { Comment as CommentModel, CommentId, CommentLikedUserNames, Thread as ThreadModel, TimestampMs } from './dataModel';
 
 const BASE_TIMESTAMP = Date.UTC(2026, 6, 5, 12, 0, 0);
 
@@ -13,7 +13,6 @@ const createComment = (
   userName: string | null,
   text: string,
   replyIds: CommentId[],
-  likeCount: number,
   timestampOffsetMinutes: number,
   imageUrl: string | null = null
 ): CommentModel => {
@@ -23,8 +22,47 @@ const createComment = (
     text,
     imageUrl,
     replyIds,
-    likeCount,
   };
+};
+
+const readerNames = [
+  'DawnFan',
+  'SinnohScholar',
+  'BerryPatch',
+  'RouteRunner',
+  'BadgeHunter',
+  'ApricornAce',
+  'LakeWatcher',
+  'ContestKid',
+  'PoketchUser',
+  'ProfessorRowanFan',
+  'TallGrassEnjoyer',
+  'PoffinChef',
+  'CanalaveReader',
+  'JubilifeLocal',
+  'GifDropper',
+];
+
+const names = (count: number, offset = 0) => readerNames.slice(offset, offset + count);
+
+const exampleLikedUserNamesByCommentId: Record<CommentId, CommentLikedUserNames> = {
+  root: names(12),
+  'reply-1': ['GifDropper', 'SinnohScholar'],
+  'reply-1-1': names(1, 2),
+  'reply-1-2': [],
+  'reply-2': names(4, 3),
+  'reply-2-1': ['GifDropper', ...names(2, 7)],
+  'reply-2-2': names(5, 9),
+  'reply-2-2-1': ['GifDropper'],
+};
+
+const malformedLikedUserNamesByCommentId: Record<CommentId, CommentLikedUserNames> = {
+  root: names(5),
+  'child-1': ['ReaderTwo'],
+  'orphan-a': [],
+  'orphan-b': [],
+  'orphan-root': [],
+  'orphan-leaf': [],
 };
 
 const cloneThread = (thread: ThreadModel): ThreadModel => {
@@ -58,29 +96,26 @@ const buildExampleThread = (): ThreadModel => {
         'LoreKeeper',
         'The opening here still hits after every reread. The pacing is wild in a good way.',
         ['reply-1', 'reply-2'],
-        12,
         0
       ),
       'reply-1': createComment(
         null,
         'Anonymous vote for the chapter-level comment style. It keeps the discussion easy to follow.',
         ['reply-1-1', 'reply-1-2'],
-        2,
         2
       ),
-      'reply-1-1': createComment('PikaFan', 'Agreed. The branch depth still feels readable.', [], 1, 5),
-      'reply-1-2': createComment('EditorBee', 'Line comments help a lot when I want to quote exact moments.', [], 0, 7),
-      'reply-2': createComment('ArcReader', 'I laughed at the ending callback.', ['reply-2-1', 'reply-2-2'], 4, 4),
-      'reply-2-1': createComment('Navi', 'Same. I had to pause there.', [], 3, 8),
+      'reply-1-1': createComment('PikaFan', 'Agreed. The branch depth still feels readable.', [], 5),
+      'reply-1-2': createComment('EditorBee', 'Line comments help a lot when I want to quote exact moments.', [], 7),
+      'reply-2': createComment('ArcReader', 'I laughed at the ending callback.', ['reply-2-1', 'reply-2-2'], 4),
+      'reply-2-1': createComment('Navi', 'Same. I had to pause there.', [], 8),
       'reply-2-2': createComment(
         'GifDropper',
         'Reaction gif for that twist.',
         ['reply-2-2-1'],
-        5,
         9,
         'https://media.giphy.com/media/13CoXDiaCcCoyk/giphy.gif'
       ),
-      'reply-2-2-1': createComment('ViewerTwo', 'Perfect gif choice.', [], 1, 12),
+      'reply-2-2-1': createComment('ViewerTwo', 'Perfect gif choice.', [], 12),
     },
   };
 };
@@ -97,14 +132,13 @@ const buildMalformedThread = (): ThreadModel => {
         'Moderator',
         'Root is valid but one reply target is missing on purpose.',
         ['child-1', 'missing-1'],
-        5,
         0
       ),
-      'child-1': createComment('ReaderOne', 'Connected child comment.', [], 1, 1),
-      'orphan-a': createComment('LoopA', 'I point to orphan-b.', ['orphan-b'], 0, 4),
-      'orphan-b': createComment('LoopB', 'I point back to orphan-a.', ['orphan-a'], 0, 5),
-      'orphan-root': createComment(null, 'This disconnected branch should still render.', ['orphan-leaf'], 0, 6),
-      'orphan-leaf': createComment('ReaderTwo', 'Leaf on disconnected branch.', [], 0, 7),
+      'child-1': createComment('ReaderOne', 'Connected child comment.', [], 1),
+      'orphan-a': createComment('LoopA', 'I point to orphan-b.', ['orphan-b'], 4),
+      'orphan-b': createComment('LoopB', 'I point back to orphan-a.', ['orphan-a'], 5),
+      'orphan-root': createComment(null, 'This disconnected branch should still render.', ['orphan-leaf'], 6),
+      'orphan-leaf': createComment('ReaderTwo', 'Leaf on disconnected branch.', [], 7),
     },
   };
 };
@@ -113,24 +147,28 @@ type CommentsStoryHarnessProps = {
   initialThread: ThreadModel;
   showDiagnostics?: boolean;
   signedInUserName?: string | null;
+  initialLikedUserNamesByCommentId?: Record<CommentId, CommentLikedUserNames>;
 };
 
 const CommentsStoryHarness = ({
   initialThread,
   showDiagnostics = false,
   signedInUserName = null,
+  initialLikedUserNamesByCommentId = exampleLikedUserNamesByCommentId,
 }: CommentsStoryHarnessProps) => {
   const [thread, setThread] = useState<ThreadModel>(() => cloneThread(initialThread));
-  const [likedCommentIds, setLikedCommentIds] = useState<Set<CommentId>>(() => new Set<CommentId>());
+  const [likedUserNamesByCommentId, setLikedUserNamesByCommentId] = useState<Record<CommentId, CommentLikedUserNames>>(() => ({
+    ...initialLikedUserNamesByCommentId,
+  }));
   const [eventLog, setEventLog] = useState<string[]>([]);
   const replyCounterRef = useRef(1);
 
   useEffect(() => {
     setThread(cloneThread(initialThread));
-    setLikedCommentIds(new Set<CommentId>());
+    setLikedUserNamesByCommentId({ ...initialLikedUserNamesByCommentId });
     setEventLog([]);
     replyCounterRef.current = 1;
-  }, [initialThread]);
+  }, [initialLikedUserNamesByCommentId, initialThread]);
 
   const appendEvent = (eventLabel: string) => {
     setEventLog((previousEvents) => [eventLabel, ...previousEvents].slice(0, 10));
@@ -152,11 +190,14 @@ const CommentsStoryHarness = ({
         'Storybook Tester',
         `Auto reply ${replyNumber} to ${replyToCommentId}`,
         [],
-        0,
         20 + replyNumber
       );
 
       appendEvent(`Reply created: ${nextCommentId} -> ${replyToCommentId}`);
+      setLikedUserNamesByCommentId((previousLikedUserNames) => ({
+        ...previousLikedUserNames,
+        [nextCommentId]: [],
+      }));
 
       return {
         ...previousThread,
@@ -173,47 +214,44 @@ const CommentsStoryHarness = ({
   };
 
   const handleToggleLike = ({ commentId, shouldLike }: { commentId: CommentId; shouldLike: boolean }) => {
+    if (!signedInUserName) {
+      appendEvent('Like skipped: no signed in user');
+      return;
+    }
+
     if (!thread.commentsById[commentId]) {
       appendEvent(`Like skipped: ${commentId} not found`);
       return;
     }
 
-    setThread((previousThread) => {
-      const existingComment = previousThread.commentsById[commentId];
-      if (!existingComment) {
-        return previousThread;
-      }
-
-      const delta = shouldLike ? 1 : -1;
-      const nextLikeCount = Math.max(0, existingComment.likeCount + delta);
+    setLikedUserNamesByCommentId((previousLikedUserNames) => {
+      const currentLikedUserNames = previousLikedUserNames[commentId] ?? [];
+      const nextLikedUserNames = shouldLike
+        ? currentLikedUserNames.includes(signedInUserName)
+          ? currentLikedUserNames
+          : [...currentLikedUserNames, signedInUserName]
+        : currentLikedUserNames.filter((userName) => userName !== signedInUserName);
 
       appendEvent(`${shouldLike ? 'Liked' : 'Unliked'} ${commentId}`);
 
       return {
-        ...previousThread,
-        commentsById: {
-          ...previousThread.commentsById,
-          [commentId]: {
-            ...existingComment,
-            likeCount: nextLikeCount,
-          },
-        },
+        ...previousLikedUserNames,
+        [commentId]: nextLikedUserNames,
       };
-    });
-
-    setLikedCommentIds((previousSet) => {
-      const nextSet = new Set(previousSet);
-      if (shouldLike) {
-        nextSet.add(commentId);
-      } else {
-        nextSet.delete(commentId);
-      }
-
-      return nextSet;
     });
   };
 
   const commentCount = Object.keys(thread.commentsById).length;
+  const likeCountsByCommentId = Object.fromEntries(
+    Object.entries(likedUserNamesByCommentId).map(([commentId, likedUserNames]) => [commentId, likedUserNames.length])
+  );
+  const commentsLikedByUser = new Set(
+    signedInUserName
+      ? Object.entries(likedUserNamesByCommentId)
+          .filter(([, likedUserNames]) => likedUserNames.includes(signedInUserName))
+          .map(([commentId]) => commentId)
+      : []
+  );
 
   return (
     <div className="min-h-screen bg-slate-100 p-6">
@@ -228,7 +266,8 @@ const CommentsStoryHarness = ({
         <Thread
           thread={thread}
           signedInUserName={signedInUserName}
-          likedCommentIds={likedCommentIds}
+          likeCountsByCommentId={likeCountsByCommentId}
+          commentsLikedByUser={commentsLikedByUser}
           showDiagnostics={showDiagnostics}
           onReply={handleReply}
           onToggleLike={handleToggleLike}
@@ -257,11 +296,13 @@ const meta = {
   },
   args: {
     initialThread: buildExampleThread(),
+    initialLikedUserNamesByCommentId: exampleLikedUserNamesByCommentId,
     showDiagnostics: false,
     signedInUserName: 'GifDropper',
   },
   argTypes: {
     initialThread: { control: false },
+    initialLikedUserNamesByCommentId: { control: false },
     showDiagnostics: { control: 'boolean' },
     signedInUserName: { control: 'text' },
   },
@@ -316,6 +357,7 @@ export const MalformedThreadShowsDiagnosticsAndDisconnectedBranches: Story = {
   name: '2. Malformed thread shows diagnostics and disconnected branches',
   args: {
     initialThread: buildMalformedThread(),
+    initialLikedUserNamesByCommentId: malformedLikedUserNamesByCommentId,
     showDiagnostics: true,
     signedInUserName: 'ReaderTwo',
   },

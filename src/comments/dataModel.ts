@@ -10,8 +10,11 @@ export type ThreadLocationId = {
   lineNumber?: number;
 };
 
+export type PageLocationId = Pick<ThreadLocationId, 'bookId' | 'chapterId'>;
+
 export const CHAPTER_COMMENT_LINE_TOKEN = 'chapter' as const;
 export type ThreadLocationKey = `${SourceType}:${ChapterId}:${number | typeof CHAPTER_COMMENT_LINE_TOKEN}`;
+export type PageLocationKey = `${SourceType}:${ChapterId}`;
 
 export type Comment = {
   timestamp: TimestampMs;
@@ -19,7 +22,6 @@ export type Comment = {
   text: string;
   imageUrl: string | null;
   replyIds: CommentId[];
-  likeCount: number;
 };
 
 export type Thread<RootCommentId extends CommentId = CommentId> = {
@@ -32,7 +34,7 @@ export type CommentsState = {
   threadByLocation: Record<ThreadLocationKey, Thread[]>;
 };
 
-export const BACKEND_THREAD_MUTATION_BUFFER_MS = 60_000;
+export type CommentLikedUserNames = string[];
 
 export type ThreadMutation =
   | {
@@ -53,12 +55,14 @@ export type ThreadMutation =
       wasReplyingTo: CommentId;
     }
   | {
-      type: 'increment-comment-like-count';
+      type: 'add-comment-like';
       commentId: CommentId;
+      userName: string;
     }
   | {
-      type: 'revert-increment-comment-like-count';
+      type: 'remove-comment-like';
       commentId: CommentId;
+      userName: string;
     };
 
 export const ANONYMOUS_USER_NAME = 'Anonymous';
@@ -69,6 +73,17 @@ export const getCommentUserName = (userName: string | null) => {
 
 export const isChapterCommentThread = (locationId: ThreadLocationId) => {
   return locationId.lineNumber === undefined;
+};
+
+export const toPageLocationId = (locationId: ThreadLocationId): PageLocationId => {
+  return {
+    bookId: locationId.bookId,
+    chapterId: locationId.chapterId,
+  };
+};
+
+export const toPageLocationKey = (locationId: PageLocationId): PageLocationKey => {
+  return `${locationId.bookId}:${locationId.chapterId}`;
 };
 
 export const toThreadLocationKey = (locationId: ThreadLocationId): ThreadLocationKey => {
