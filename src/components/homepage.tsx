@@ -4,11 +4,18 @@ import ViewListIcon from '@mui/icons-material/ViewList';
 import { IconButton, useMediaQuery, useTheme } from '@mui/material';
 import { useContext, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { CommentSection } from '../comments/comment-section';
+import { PageLocationId } from '../comments/dataModel';
 import { ConfigurationContext } from '../context/ConfigurationContext';
 import PSSJBookDashboardTile from './dashboardTiles/PSSJBookDashboardTile';
 import WtDRBookDashboardTile from './dashboardTiles/WtDRBookDashboardTile';
 import SoWBBookDashboardTile from './dashboardTiles/SoWBBookDashboardTile';
 import { GalleryDashboardTile } from './gallery/GalleryDashboardTile';
+
+const HOMEPAGE_COMMENT_LOCATION: PageLocationId = {
+  bookId: 'PSSJ',
+  chapterId: 'homepage',
+};
 
 export const Homepage = () => {
   const navigate = useNavigate();
@@ -43,6 +50,7 @@ export const Homepage = () => {
         <GalleryDashboardTile />
       </div>
       <div className="flex-grow min-h-10" />
+      <CommentSection locationId={HOMEPAGE_COMMENT_LOCATION} className="mt-10" />
     </div>
   );
 };

@@ -1,5 +1,3 @@
-const { Redis } = require('@upstash/redis');
-
 const COMMENT_KEY_PREFIX = `comments:v1`;
 
 const headers = {
@@ -7,8 +5,6 @@ const headers = {
   'Access-Control-Allow-Headers': 'Content-Type',
   'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
 };
-
-let redisClient = null;
 
 const json = (statusCode, body) => ({
   statusCode,
@@ -19,13 +15,54 @@ const json = (statusCode, body) => ({
   body: JSON.stringify(body),
 });
 
-const getRedis = () => {
-  if (redisClient) {
-    return redisClient;
+const getRedisEnv = () => {
+  const url = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+
+  if (!url || !token) {
+    throw new Error('Missing UPSTASH_REDIS_REST_URL or UPSTASH_REDIS_REST_TOKEN.');
   }
 
-  redisClient = Redis.fromEnv();
-  return redisClient;
+  return {
+    url: url.replace(/\/+$/, ''),
+    token,
+  };
+};
+
+const redisCommand = async (command) => {
+  const { url, token } = getRedisEnv();
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(command),
+  });
+
+  const payload = await response.json().catch(() => null);
+  if (!response.ok || payload?.error) {
+    throw new Error(payload?.error || `Upstash Redis command failed with status ${response.status}.`);
+  }
+
+  return payload?.result;
+};
+
+const redisGet = async (key) => {
+  const value = await redisCommand(['GET', key]);
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+};
+
+const redisSet = async (key, value) => {
+  await redisCommand(['SET', key, JSON.stringify(value)]);
 };
 
 const toPageLocationKey = (locationId) => `${locationId.bookId}:${locationId.chapterId}`;
@@ -99,22 +136,22 @@ const isThreadMutation = (value) => {
   }
 };
 
-const getThreadsForPage = async (redis, locationId) => {
-  const value = await redis.get(toPageThreadsRedisKey(locationId));
+const getThreadsForPage = async (locationId) => {
+  const value = await redisGet(toPageThreadsRedisKey(locationId));
   return Array.isArray(value) ? value : [];
 };
 
-const setThreadsForPage = async (redis, locationId, threads) => {
-  await redis.set(toPageThreadsRedisKey(locationId), threads);
+const setThreadsForPage = async (locationId, threads) => {
+  await redisSet(toPageThreadsRedisKey(locationId), threads);
 };
 
-const getLikedUserNamesForComment = async (redis, commentId) => {
-  const value = await redis.get(toCommentLikedUserNamesRedisKey(commentId));
+const getLikedUserNamesForComment = async (commentId) => {
+  const value = await redisGet(toCommentLikedUserNamesRedisKey(commentId));
   return Array.isArray(value) ? value.filter((userName) => typeof userName === 'string') : [];
 };
 
-const setLikedUserNamesForComment = async (redis, commentId, likedUserNames) => {
-  await redis.set(toCommentLikedUserNamesRedisKey(commentId), likedUserNames);
+const setLikedUserNamesForComment = async (commentId, likedUserNames) => {
+  await redisSet(toCommentLikedUserNamesRedisKey(commentId), likedUserNames);
 };
 
 const includesComment = (thread, commentId) => Boolean(thread.commentsById?.[commentId]);
@@ -220,7 +257,6 @@ const applyThreadArrayMutation = (threads, mutation) => {
 };
 
 const handleGet = async (event) => {
-  const redis = getRedis();
   const query = event.queryStringParameters || {};
 
   if (query.commentId || query.commentIds) {
@@ -231,7 +267,7 @@ const handleGet = async (event) => {
 
     const entries = await Promise.all(
       commentIds.map(async (commentId) => {
-        const likedUserNames = await getLikedUserNamesForComment(redis, commentId);
+        const likedUserNames = await getLikedUserNamesForComment(commentId);
         return [commentId, likedUserNames];
       })
     );
@@ -252,7 +288,7 @@ const handleGet = async (event) => {
 
   return json(200, {
     pageLocationId,
-    threads: await getThreadsForPage(redis, pageLocationId),
+    threads: await getThreadsForPage(pageLocationId),
   });
 };
 
@@ -262,11 +298,10 @@ const handlePost = async (event) => {
     return json(400, { error: 'Expected { pageLocationId, mutation } with a valid thread mutation.' });
   }
 
-  const redis = getRedis();
   const { mutation } = request;
 
   if (mutation.type === 'add-comment-like') {
-    const likedUserNames = await getLikedUserNamesForComment(redis, mutation.commentId);
+    const likedUserNames = await getLikedUserNamesForComment(mutation.commentId);
     if (likedUserNames.includes(mutation.userName)) {
       return json(200, {
         type: 'comment-liked-users-updated',
@@ -277,7 +312,7 @@ const handlePost = async (event) => {
     }
 
     const nextLikedUserNames = [...likedUserNames, mutation.userName];
-    await setLikedUserNamesForComment(redis, mutation.commentId, nextLikedUserNames);
+    await setLikedUserNamesForComment(mutation.commentId, nextLikedUserNames);
 
     return json(200, {
       type: 'comment-liked-users-updated',
@@ -288,7 +323,7 @@ const handlePost = async (event) => {
   }
 
   if (mutation.type === 'remove-comment-like') {
-    const likedUserNames = await getLikedUserNamesForComment(redis, mutation.commentId);
+    const likedUserNames = await getLikedUserNamesForComment(mutation.commentId);
     const nextLikedUserNames = likedUserNames.filter((userName) => userName !== mutation.userName);
     if (likedUserNames.length === nextLikedUserNames.length) {
       return json(200, {
@@ -299,7 +334,7 @@ const handlePost = async (event) => {
       });
     }
 
-    await setLikedUserNamesForComment(redis, mutation.commentId, nextLikedUserNames);
+    await setLikedUserNamesForComment(mutation.commentId, nextLikedUserNames);
 
     return json(200, {
       type: 'comment-liked-users-updated',
@@ -316,14 +351,14 @@ const handlePost = async (event) => {
           chapterId: mutation.locationId.chapterId,
         }
       : request.pageLocationId;
-  const threads = await getThreadsForPage(redis, pageLocationId);
+  const threads = await getThreadsForPage(pageLocationId);
   const [nextThreads, didMutate] = applyThreadArrayMutation(threads, mutation);
 
   if (!didMutate) {
     return json(404, { error: 'Could not find a matching thread/comment for this mutation.' });
   }
 
-  await setThreadsForPage(redis, pageLocationId, nextThreads);
+  await setThreadsForPage(pageLocationId, nextThreads);
 
   return json(200, {
     type: 'threads-updated',

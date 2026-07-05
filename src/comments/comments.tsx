@@ -19,6 +19,8 @@ type ToggleLikeAction = {
   shouldLike: boolean;
 };
 
+type CommentSlotRender = (commentId: CommentId) => ReactNode;
+
 export type CommentProps = {
   commentId: CommentId;
   comment: CommentModel;
@@ -179,6 +181,7 @@ export type ThreadProps = {
   resolveUserName?: (userName: string | null) => string;
   onReply?: (action: ReplyAction) => void;
   onToggleLike?: (action: ToggleLikeAction) => void;
+  renderAfterComment?: CommentSlotRender;
   emptyState?: ReactNode;
 };
 
@@ -214,6 +217,7 @@ export const Thread = ({
   resolveUserName,
   onReply,
   onToggleLike,
+  renderAfterComment,
   emptyState,
 }: ThreadProps) => {
   const graph = useMemo(() => buildThreadGraph(thread), [thread]);
@@ -265,6 +269,7 @@ export const Thread = ({
           onReply={onReply}
           onToggleLike={onToggleLike}
         />
+        {renderAfterComment?.(commentId)}
         {childIds.length > 0 ? (
           <div className={`relative mt-3 space-y-3 pl-5 ${depth < maxDepthIndent ? 'ml-5' : 'ml-0'}`} aria-label={`Replies to ${commentId}`}>
             {childIds.map((childId, childIndex) => (
