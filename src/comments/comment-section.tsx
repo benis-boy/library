@@ -1,5 +1,6 @@
 import { Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle } from '@mui/material';
 import { useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { ConfigurationContext } from '../context/ConfigurationContext';
 import { PatreonContext } from '../context/PatreonContext';
 import { Thread as ThreadView } from './comments';
 import { fetchCommentLikedUserNames, fetchThreadsForPage, sendThreadMutation } from './comments-api';
@@ -56,9 +57,6 @@ const createComment = (text: string, userName: string | null, imageUrl: string |
   imageUrl,
   replyIds: [],
 });
-
-const commentInputBaseClass =
-  'block max-h-48 min-h-10 w-full resize-none overflow-hidden border-0 border-b border-slate-300 bg-transparent px-0 py-2 text-sm leading-6 text-slate-900 placeholder:text-slate-500 focus:border-slate-900 focus:outline-none focus:ring-0 disabled:opacity-60';
 
 type LoadedComments = {
   threads: Thread[];
@@ -117,6 +115,7 @@ const CommentInput = ({
   onCancel,
   onSubmit,
 }: CommentInputProps) => {
+  const { isDarkMode } = useContext(ConfigurationContext);
   const [text, setText] = useState(initialText);
   const [imageUrl, setImageUrl] = useState<string | null>(initialImageUrl);
   const [isFocused, setIsFocused] = useState(autoFocus);
@@ -177,12 +176,22 @@ const CommentInput = ({
     setIsFocused(false);
   };
 
+  const commentInputClass = `block max-h-48 min-h-10 w-full resize-none overflow-hidden border-0 border-b bg-transparent px-0 py-2 text-sm leading-6 focus:outline-none focus:ring-0 disabled:opacity-60 ${
+    isDarkMode
+      ? 'border-slate-600 text-slate-100 placeholder:text-slate-400 focus:border-slate-200'
+      : 'border-slate-300 text-slate-900 placeholder:text-slate-500 focus:border-slate-900'
+  }`;
+
   return (
     <div
       className={
         embedded
           ? 'bg-transparent'
-          : 'rounded-2xl border border-transparent bg-white p-3 shadow-sm transition-colors focus-within:border-slate-200'
+          : `rounded-2xl border p-3 shadow-sm transition-colors ${
+              isDarkMode
+                ? 'border-slate-700 bg-slate-900 focus-within:border-slate-500'
+                : 'border-transparent bg-white focus-within:border-slate-200'
+            }`
       }
     >
       <textarea
@@ -193,17 +202,23 @@ const CommentInput = ({
         disabled={disabled}
         onFocus={() => setIsFocused(true)}
         onChange={(event) => setText(event.target.value)}
-        className={commentInputBaseClass}
+        className={commentInputClass}
       />
 
       {imageUrl ? (
-        <div className="mt-3 w-fit max-w-full rounded-xl border border-slate-200 bg-slate-50 p-2">
+        <div
+          className={`mt-3 w-fit max-w-full rounded-xl border p-2 ${
+            isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'
+          }`}
+        >
           <img src={imageUrl} alt="Attached media preview" className="max-h-60 max-w-full rounded-lg object-contain" />
           <button
             type="button"
             disabled={disabled}
             onClick={() => setImageUrl(null)}
-            className="mt-2 rounded-full px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
+            className={`mt-2 rounded-full px-3 py-1 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-60 ${
+              isDarkMode ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-200'
+            }`}
           >
             Remove image
           </button>
@@ -214,13 +229,17 @@ const CommentInput = ({
         <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-3">
             <EmbeddedMediaInput disabled={disabled} onAttach={setImageUrl} />
-            <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-600">
+            <label
+              className={`flex cursor-pointer items-center gap-2 text-xs font-medium ${
+                isDarkMode ? 'text-slate-300' : 'text-slate-600'
+              }`}
+            >
               <input
                 type="checkbox"
                 checked={commentAnonymously}
                 disabled={disabled || forceAnonymous}
                 onChange={(event) => setCommentAnonymously(event.target.checked)}
-                className="h-4 w-4 rounded border-slate-300 text-slate-900"
+                className={`h-4 w-4 rounded ${isDarkMode ? 'border-slate-500 text-slate-100' : 'border-slate-300 text-slate-900'}`}
               />
               Comment Anonymously
             </label>
@@ -231,7 +250,9 @@ const CommentInput = ({
               type="button"
               onClick={handleCancel}
               disabled={disabled}
-              className="rounded-full px-4 py-2 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+              className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-100'
+              }`}
             >
               Cancel
             </button>
@@ -239,7 +260,11 @@ const CommentInput = ({
               type="button"
               onClick={() => void handleSubmit()}
               disabled={disabled || text.trim().length === 0}
-              className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+              className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed ${
+                isDarkMode
+                  ? 'bg-slate-100 text-slate-950 hover:bg-white disabled:bg-slate-700 disabled:text-slate-400'
+                  : 'bg-slate-900 text-white hover:bg-slate-700 disabled:bg-slate-300'
+              }`}
             >
               {submitLabel}
             </button>
@@ -252,6 +277,7 @@ const CommentInput = ({
 
 export const CommentSection = ({ locationId, className }: CommentSectionProps) => {
   const patreonContext = useContext(PatreonContext);
+  const { isDarkMode } = useContext(ConfigurationContext);
   const pageLocationId = useMemo(() => normalizePageLocation(locationId), [locationId]);
   const signedInUserName = isLocalLibraryUrl() ? 'B. Warnecke' : (patreonContext?.userInfo?.userName ?? null);
   const forceAnonymous = signedInUserName === null;
@@ -364,7 +390,12 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
     }
   };
 
-  const handleReply = async (text: string, commentAnonymously: boolean, imageUrl: string | null, replyingTo: CommentId) => {
+  const handleReply = async (
+    text: string,
+    commentAnonymously: boolean,
+    imageUrl: string | null,
+    replyingTo: CommentId
+  ) => {
     const commentId = createCommentId();
     const userName = forceAnonymous || commentAnonymously ? null : signedInUserName;
 
@@ -390,7 +421,12 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
     }
   };
 
-  const handleEdit = async (text: string, commentAnonymously: boolean, imageUrl: string | null, commentId: CommentId) => {
+  const handleEdit = async (
+    text: string,
+    commentAnonymously: boolean,
+    imageUrl: string | null,
+    commentId: CommentId
+  ) => {
     const existing = findComment(commentId);
     if (!existing) {
       setError('Could not find comment to edit.');
@@ -412,7 +448,7 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
           text,
           userName,
           imageUrl,
-          timestamp: Date.now(),
+          updated: true,
         },
       });
 
@@ -538,17 +574,29 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
   };
 
   return (
-    <section className={`mx-auto w-full max-w-3xl space-y-5 ${className ?? ''}`}>
-      <header className="flex items-center justify-between gap-3">
-        <h2 className="text-xl font-bold text-slate-950">
+    <section className={`mx-auto w-full max-w-3xl ${className ?? ''}`}>
+      <header className="flex items-center justify-between gap-1">
+        <h2 className={`text-xl font-bold ${isDarkMode ? 'text-slate-100' : 'text-slate-950'}`}>
           {commentCount} Comment{commentCount === 1 ? '' : 's'}
         </h2>
-        {isLoading ? <span className="text-sm text-slate-500">Loading...</span> : null}
+        {isLoading ? (
+          <span className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Loading...</span>
+        ) : null}
       </header>
 
-      <CommentInput disabled={isSubmitting} forceAnonymous={forceAnonymous} onSubmit={handleStartThread} />
+      <div className="py-3">
+        <CommentInput disabled={isSubmitting} forceAnonymous={forceAnonymous} onSubmit={handleStartThread} />
+      </div>
 
-      {error ? <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
+      {error ? (
+        <div
+          className={`rounded-xl border px-4 py-3 text-sm ${
+            isDarkMode ? 'border-red-800 bg-red-950 text-red-200' : 'border-red-200 bg-red-50 text-red-700'
+          }`}
+        >
+          {error}
+        </div>
+      ) : null}
 
       <div className="space-y-5">
         {threads.map((thread) => (
@@ -582,7 +630,9 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
                     placeholder="Edit your comment..."
                     submitLabel="Comment"
                     onCancel={() => setEditingCommentId(null)}
-                    onSubmit={(text, commentAnonymously, imageUrl) => handleEdit(text, commentAnonymously, imageUrl, commentId)}
+                    onSubmit={(text, commentAnonymously, imageUrl) =>
+                      handleEdit(text, commentAnonymously, imageUrl, commentId)
+                    }
                   />
                 </div>
               ) : null
@@ -597,7 +647,9 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
                     placeholder="Add a reply..."
                     submitLabel="Reply"
                     onCancel={() => setReplyingToCommentId(null)}
-                    onSubmit={(text, commentAnonymously, imageUrl) => handleReply(text, commentAnonymously, imageUrl, commentId)}
+                    onSubmit={(text, commentAnonymously, imageUrl) =>
+                      handleReply(text, commentAnonymously, imageUrl, commentId)
+                    }
                   />
                 </div>
               ) : null
@@ -606,21 +658,60 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
         ))}
       </div>
 
-      <Dialog open={pendingDeleteCommentId !== null} onClose={() => setPendingDeleteCommentId(null)}>
-        <DialogTitle>Delete comment?</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
+      <Dialog
+        open={pendingDeleteCommentId !== null}
+        onClose={() => setPendingDeleteCommentId(null)}
+        slotProps={{
+          paper: {
+            sx: isDarkMode
+              ? {
+                  backgroundColor: '#0f172a',
+                  border: '1px solid #334155',
+                  color: '#f1f5f9',
+                }
+              : undefined,
+          },
+          backdrop: {
+            sx: isDarkMode ? { backgroundColor: 'rgba(0, 0, 0, 0.7)' } : undefined,
+          },
+        }}
+      >
+        <DialogTitle sx={isDarkMode ? { color: '#f1f5f9' } : undefined}>Delete comment?</DialogTitle>
+        <DialogContent sx={isDarkMode ? { color: '#cbd5e1' } : undefined}>
+          <DialogContentText sx={isDarkMode ? { color: '#cbd5e1' } : undefined}>
             This will delete the comment and every reply below it. This action cannot be undone.
           </DialogContentText>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setPendingDeleteCommentId(null)} disabled={isSubmitting}>
+        <DialogActions
+          sx={
+            isDarkMode
+              ? {
+                  backgroundColor: 'rgba(2, 6, 23, 0.4)',
+                  borderTop: '1px solid #1e293b',
+                }
+              : undefined
+          }
+        >
+          <Button
+            onClick={() => setPendingDeleteCommentId(null)}
+            disabled={isSubmitting}
+            sx={isDarkMode ? { color: '#cbd5e1', '&:hover': { backgroundColor: '#1e293b' } } : undefined}
+          >
             Cancel
           </Button>
           <Button
             color="error"
             variant="contained"
             disabled={isSubmitting || pendingDeleteCommentId === null}
+            sx={
+              isDarkMode
+                ? {
+                    backgroundColor: '#b91c1c',
+                    '&:hover': { backgroundColor: '#dc2626' },
+                    '&.Mui-disabled': { backgroundColor: '#334155', color: '#94a3b8' },
+                  }
+                : undefined
+            }
             onClick={() => {
               if (pendingDeleteCommentId) {
                 void handleDelete(pendingDeleteCommentId);

@@ -1,5 +1,6 @@
 import { Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, TextField } from '@mui/material';
-import { useEffect, useState } from 'react';
+import { useContext, useEffect, useState } from 'react';
+import { ConfigurationContext } from '../context/ConfigurationContext';
 import imageInputUrl from './image-input.svg';
 
 type EmbeddedMediaInputProps = {
@@ -31,6 +32,7 @@ const probeImageLoad = (imageUrl: string) => {
 };
 
 export const EmbeddedMediaInput = ({ disabled = false, onAttach }: EmbeddedMediaInputProps) => {
+  const { isDarkMode } = useContext(ConfigurationContext);
   const [open, setOpen] = useState(false);
   const [url, setUrl] = useState('');
   const [validatedUrl, setValidatedUrl] = useState<string | null>(null);
@@ -107,15 +109,38 @@ export const EmbeddedMediaInput = ({ disabled = false, onAttach }: EmbeddedMedia
         aria-label="Attach image"
         disabled={disabled}
         onClick={() => setOpen(true)}
-        className="flex h-9 w-9 items-center justify-center rounded-full transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+        className={`flex h-9 w-9 items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+          isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-100'
+        }`}
       >
-        <img src={imageInputUrl} alt="" className="h-5 w-5" aria-hidden="true" />
+        <img src={imageInputUrl} alt="" className={`h-5 w-5 ${isDarkMode ? 'invert' : ''}`} aria-hidden="true" />
       </button>
 
-      <Dialog open={open} onClose={close} fullWidth maxWidth="sm">
-        <DialogTitle>Attach image</DialogTitle>
-        <DialogContent className="space-y-4">
-          <DialogContentText>Paste an image or GIF URL to attach it to your comment.</DialogContentText>
+      <Dialog
+        open={open}
+        onClose={close}
+        fullWidth
+        maxWidth="sm"
+        slotProps={{
+          paper: {
+            sx: isDarkMode
+              ? {
+                  backgroundColor: '#0f172a',
+                  border: '1px solid #334155',
+                  color: '#f1f5f9',
+                }
+              : undefined,
+          },
+          backdrop: {
+            sx: isDarkMode ? { backgroundColor: 'rgba(0, 0, 0, 0.7)' } : undefined,
+          },
+        }}
+      >
+        <DialogTitle sx={isDarkMode ? { color: '#f1f5f9' } : undefined}>Attach image</DialogTitle>
+        <DialogContent className="space-y-4" sx={isDarkMode ? { color: '#cbd5e1' } : undefined}>
+          <DialogContentText sx={isDarkMode ? { color: '#cbd5e1' } : undefined}>
+            Paste an image or GIF URL to attach it to your comment.
+          </DialogContentText>
           <TextField
             autoFocus
             fullWidth
@@ -125,9 +150,28 @@ export const EmbeddedMediaInput = ({ disabled = false, onAttach }: EmbeddedMedia
             error={Boolean(error)}
             helperText={error || (checking ? 'Checking image...' : ' ')}
             onChange={(event) => setUrl(event.target.value)}
+            InputLabelProps={{ className: isDarkMode ? 'text-slate-300' : undefined }}
+            FormHelperTextProps={{ className: isDarkMode ? 'text-slate-400' : undefined }}
+            InputProps={{
+              className: isDarkMode ? 'text-slate-100' : undefined,
+            }}
+            sx={
+              isDarkMode
+                ? {
+                    '& .MuiInputBase-root': { backgroundColor: '#0f172a', color: '#f1f5f9' },
+                    '& .MuiInputBase-input': { color: '#f1f5f9' },
+                    '& .MuiInputLabel-root': { color: '#cbd5e1' },
+                    '& .MuiInputLabel-root.Mui-focused': { color: '#e2e8f0' },
+                    '& .MuiOutlinedInput-notchedOutline': { borderColor: '#475569' },
+                    '& .MuiOutlinedInput-root:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#94a3b8' },
+                    '& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: '#e2e8f0' },
+                    '& .MuiFormHelperText-root': { color: error ? '#fca5a5' : '#94a3b8' },
+                  }
+                : undefined
+            }
           />
           {validatedUrl ? (
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <div className={`rounded-xl border p-3 ${isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'}`}>
               <img
                 src={validatedUrl}
                 alt="Attachment preview"
@@ -136,9 +180,34 @@ export const EmbeddedMediaInput = ({ disabled = false, onAttach }: EmbeddedMedia
             </div>
           ) : null}
         </DialogContent>
-        <DialogActions>
-          <Button onClick={close}>Cancel</Button>
-          <Button variant="contained" onClick={attach} disabled={!validatedUrl || checking}>
+        <DialogActions
+          sx={
+            isDarkMode
+              ? {
+                  backgroundColor: 'rgba(2, 6, 23, 0.4)',
+                  borderTop: '1px solid #1e293b',
+                }
+              : undefined
+          }
+        >
+          <Button onClick={close} sx={isDarkMode ? { color: '#cbd5e1', '&:hover': { backgroundColor: '#1e293b' } } : undefined}>
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            onClick={attach}
+            disabled={!validatedUrl || checking}
+            sx={
+              isDarkMode
+                ? {
+                    backgroundColor: '#e2e8f0',
+                    color: '#0f172a',
+                    '&:hover': { backgroundColor: '#f8fafc' },
+                    '&.Mui-disabled': { backgroundColor: '#334155', color: '#94a3b8' },
+                  }
+                : undefined
+            }
+          >
             Attach
           </Button>
         </DialogActions>

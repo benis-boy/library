@@ -116,7 +116,8 @@ const isComment = (value) => {
     typeof value.text === 'string' &&
     (typeof value.imageUrl === 'string' || value.imageUrl === null) &&
     Array.isArray(value.replyIds) &&
-    value.replyIds.every((replyId) => typeof replyId === 'string')
+    value.replyIds.every((replyId) => typeof replyId === 'string') &&
+    (value.updated === undefined || typeof value.updated === 'boolean')
   );
 };
 

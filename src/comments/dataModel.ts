@@ -22,6 +22,7 @@ export type Comment = {
   text: string;
   imageUrl: string | null;
   replyIds: CommentId[];
+  updated?: boolean;
 };
 
 export type Thread<RootCommentId extends CommentId = CommentId> = {

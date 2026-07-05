@@ -1,7 +1,8 @@
 import OpenInFullIcon from '@mui/icons-material/OpenInFull';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { getGalleryManifestPath } from '../../cacheVersioning';
+import { ConfigurationContext } from '../../context/ConfigurationContext';
 import { ImageLightbox } from './ImageLightbox';
 import { BASE_URL, markGalleryAsVisited, toPublicAssetPath, toTimestamp } from './galleryShared';
 import {
@@ -36,6 +37,7 @@ type GalleryPageProps = {
 };
 
 export const GalleryPage = ({ onTagOptionsChange }: GalleryPageProps) => {
+  const { isDarkMode } = useContext(ConfigurationContext);
   const [searchParams] = useSearchParams();
   const [manifest, setManifest] = useState<GalleryManifest>(DEFAULT_MANIFEST);
   const [loading, setLoading] = useState(true);
@@ -244,20 +246,42 @@ export const GalleryPage = ({ onTagOptionsChange }: GalleryPageProps) => {
     <section className="min-h-full w-full px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-[1400px]">
         {loading ? (
-          <div className="rounded-xl border border-slate-200 bg-white p-6 text-slate-600">Loading gallery...</div>
+          <div
+            className={`rounded-xl border p-6 ${
+              isDarkMode ? 'border-slate-700 bg-slate-900 text-slate-300' : 'border-slate-200 bg-white text-slate-600'
+            }`}
+          >
+            Loading gallery...
+          </div>
         ) : null}
 
         {error ? (
-          <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-red-700">{error}</div>
+          <div
+            className={`rounded-xl border p-6 ${
+              isDarkMode ? 'border-red-800 bg-red-950 text-red-200' : 'border-red-200 bg-red-50 text-red-700'
+            }`}
+          >
+            {error}
+          </div>
         ) : null}
 
         {!loading && !error && sortedImages.length === 0 ? (
-          <div className="rounded-xl border border-slate-200 bg-white p-6 text-slate-600">No gallery images found.</div>
+          <div
+            className={`rounded-xl border p-6 ${
+              isDarkMode ? 'border-slate-700 bg-slate-900 text-slate-300' : 'border-slate-200 bg-white text-slate-600'
+            }`}
+          >
+            No gallery images found.
+          </div>
         ) : null}
 
         {!loading && !error && sortedImages.length > 0 ? (
           <div className="flex-1 min-w-0">
-            <div className="flex items-center justify-between mb-3 rounded-lg border border-slate-200 bg-white/80 px-3 py-2 text-sm text-slate-600">
+            <div
+              className={`flex items-center justify-between mb-3 rounded-lg border px-3 py-2 text-sm ${
+                isDarkMode ? 'border-slate-700 bg-slate-900/80 text-slate-300' : 'border-slate-200 bg-white/80 text-slate-600'
+              }`}
+            >
               <span>
                 Showing <strong>{filteredImages.length}</strong> of <strong>{sortedImages.length}</strong> images
               </span>
@@ -265,7 +289,11 @@ export const GalleryPage = ({ onTagOptionsChange }: GalleryPageProps) => {
             </div>
 
             {filteredImages.length === 0 ? (
-              <div className="rounded-xl border border-slate-200 bg-white p-6 text-slate-600">
+              <div
+                className={`rounded-xl border p-6 ${
+                  isDarkMode ? 'border-slate-700 bg-slate-900 text-slate-300' : 'border-slate-200 bg-white text-slate-600'
+                }`}
+              >
                 No images match the active tags. Try removing one filter.
               </div>
             ) : (
@@ -293,7 +321,9 @@ export const GalleryPage = ({ onTagOptionsChange }: GalleryPageProps) => {
                       type="button"
                       onClick={() => setSelectedImageId(image.id)}
                       style={tileAnimationStyle}
-                      className="group relative block overflow-hidden rounded-xl border border-slate-200 bg-white text-left shadow-sm hover:shadow-xl transition-all duration-200"
+                      className={`group relative block overflow-hidden rounded-xl border text-left shadow-sm hover:shadow-xl transition-all duration-200 ${
+                        isDarkMode ? 'border-slate-700 bg-slate-900' : 'border-slate-200 bg-white'
+                      }`}
                     >
                       <img
                         src={thumbPath}

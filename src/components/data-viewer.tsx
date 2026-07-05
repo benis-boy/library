@@ -1,6 +1,8 @@
 import { Fragment, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { getGalleryManifestPath } from '../cacheVersioning';
+import { CommentSection } from '../comments/comment-section';
+import { PageLocationId } from '../comments/dataModel';
 import { ConfigurationContext } from '../context/ConfigurationContext';
 import AccessRestrictedMessage from './notLoggedIn';
 import PatreonMessage from './notASupporter';
@@ -241,6 +243,13 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
 
   if (!lContext) return <Fragment />;
 
+  const routeInfo = parseReaderRoute(params.bookId, params.chapter);
+  const commentLocation: PageLocationId | null = routeInfo
+    ? { bookId: routeInfo.book, chapterId: routeInfo.chapter }
+    : selectedChapter
+      ? { bookId: selectedBook, chapterId: selectedChapter }
+      : null;
+
   const readerBody = accessDeniedReason ? (
     accessDeniedReason === 'login_required' ? (
       <AccessRestrictedMessage />
@@ -248,7 +257,7 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
       <PatreonMessage />
     )
   ) : (
-    <div className="w-full flex lg:pl-4 px-2 lg:pr-0">
+    <div className="w-full flex">
       <iframe
         ref={iframeRef}
         onLoad={() => injectStyles(iframeRef, { isDarkMode, selectedFont, fontSize })}
@@ -263,44 +272,48 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
 
   return (
     <>
-      {readerBody}
+      <div className="w-full px-2 lg:pl-4 lg:pr-0 pb-8">
+        {readerBody}
 
-      {showNextChapterButton ? (
-        <div className="flex justify-center mt-4 pb-4">
-          <button
-            className="px-6 py-2 bg-[#872341] hover:scale-105 text-white font-semibold rounded-lg shadow-md transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-opacity-50"
-            style={{ maxWidth: '200px' }}
-            onClick={async (e) => {
-              e.currentTarget.blur();
-              if (!setSelectedChapter) {
-                return;
-              }
+        {showNextChapterButton ? (
+          <div className="flex justify-center mt-4 pb-4">
+            <button
+              className="px-6 py-2 bg-[#872341] hover:scale-105 text-white font-semibold rounded-lg shadow-md transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-opacity-50"
+              style={{ maxWidth: '200px' }}
+              onClick={async (e) => {
+                e.currentTarget.blur();
+                if (!setSelectedChapter) {
+                  return;
+                }
 
-              const routeBook = normalizeRouteBookId(params.bookId);
-              const routeInfo = parseReaderRoute(params.bookId, params.chapter);
-              const book = routeInfo?.book || routeBook || selectedBook;
-              const currentChapter =
-                routeInfo?.chapter ||
-                (book && selectedBook === book ? normalizeChapterReference(selectedChapter) : undefined) ||
-                (book ? getStoredSelectedChapter(book) : undefined);
-              if (!book || !currentChapter) {
-                return;
-              }
+                const routeBook = normalizeRouteBookId(params.bookId);
+                const routeInfo = parseReaderRoute(params.bookId, params.chapter);
+                const book = routeInfo?.book || routeBook || selectedBook;
+                const currentChapter =
+                  routeInfo?.chapter ||
+                  (book && selectedBook === book ? normalizeChapterReference(selectedChapter) : undefined) ||
+                  (book ? getStoredSelectedChapter(book) : undefined);
+                if (!book || !currentChapter) {
+                  return;
+                }
 
-            const nextChapter = await getNextChapterForBook(book, currentChapter);
-            if (!nextChapter) {
-              navigate('/reader/end');
-              return;
-            }
+                const nextChapter = await getNextChapterForBook(book, currentChapter);
+                if (!nextChapter) {
+                  navigate('/reader/end');
+                  return;
+                }
 
-            const nextChapterReference = nextChapter.chapterId || nextChapter.chapter;
-            navigate(getReaderRoute(book, nextChapterReference));
-          }}
-        >
-            Next Chapter
-          </button>
-        </div>
-      ) : null}
+                const nextChapterReference = nextChapter.chapterId || nextChapter.chapter;
+                navigate(getReaderRoute(book, nextChapterReference));
+              }}
+            >
+              Next Chapter
+            </button>
+          </div>
+        ) : null}
+
+        {commentLocation ? <CommentSection locationId={commentLocation} className="mt-8 mb-4" /> : null}
+      </div>
 
       <ImageLightbox
         open={Boolean(lightboxImageId && selectedLightboxImageSrc)}

@@ -1,6 +1,7 @@
 import { SwipeableDrawer, useMediaQuery, useTheme } from '@mui/material';
-import { useMemo } from 'react';
+import { useContext, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { ConfigurationContext } from '../../context/ConfigurationContext';
 import { GalleryTagFilter } from './GalleryTagFilter';
 import { buildGalleryTagQueryValue, GalleryTagOption, parseActiveGalleryTags, toggleGalleryTagSelection } from './tagUtils';
 
@@ -19,6 +20,7 @@ export const GalleryNavigator = ({
   isHeaderVisible,
   tagOptions,
 }: GalleryNavigatorProps) => {
+  const { isDarkMode } = useContext(ConfigurationContext);
   const [searchParams, setSearchParams] = useSearchParams();
   const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
   const theme = useTheme();
@@ -53,16 +55,16 @@ export const GalleryNavigator = ({
     <SwipeableDrawer
       ref={ref}
       sx={{
-        backgroundColor: '#f8fafc',
-        color: '#0f172a',
+        backgroundColor: isDarkMode ? '#0f172a' : '#f8fafc',
+        color: isDarkMode ? '#f1f5f9' : '#0f172a',
         width: 260,
         flexShrink: 0,
         '& .MuiDrawer-paper': {
-          backgroundColor: '#f8fafc',
-          color: '#0f172a',
+          backgroundColor: isDarkMode ? '#0f172a' : '#f8fafc',
+          color: isDarkMode ? '#f1f5f9' : '#0f172a',
           width: 260,
           boxSizing: 'border-box',
-          borderRight: '1px solid #e2e8f0',
+          borderRight: `1px solid ${isDarkMode ? '#334155' : '#e2e8f0'}`,
         },
       }}
       variant={hasTouch || !isLargeScreen ? 'temporary' : 'persistent'}
