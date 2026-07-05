@@ -1,7 +1,6 @@
 const { Redis } = require('@upstash/redis');
 
-const isLocalDeploy = process.env.LOCAL_DEPLOY === 'true' || process.env.NETLIFY_DEV === 'true';
-const COMMENT_KEY_PREFIX = `${isLocalDeploy ? 'local:' : ''}comments:v1`;
+const COMMENT_KEY_PREFIX = `comments:v1`;
 
 const headers = {
   'Access-Control-Allow-Origin': '*',
@@ -48,7 +47,12 @@ const parseJsonBody = (event) => {
 };
 
 const isPageLocationId = (value) => {
-  return typeof value?.bookId === 'string' && value.bookId.length > 0 && typeof value?.chapterId === 'string' && value.chapterId.length > 0;
+  return (
+    typeof value?.bookId === 'string' &&
+    value.bookId.length > 0 &&
+    typeof value?.chapterId === 'string' &&
+    value.chapterId.length > 0
+  );
 };
 
 const isThreadLocationId = (value) => {
