@@ -1,4 +1,4 @@
-import { ReactNode, useMemo } from 'react';
+import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Comment as CommentModel,
   CommentId,
@@ -6,6 +6,7 @@ import {
   getCommentUserName,
   Thread as ThreadModel,
 } from './dataModel';
+import { ImageLightbox } from '../components/gallery/ImageLightbox';
 import { ThreadGraphIssue, buildThreadGraph, getOrphanRootCommentIds } from './graph-utils';
 import heartEmptyUrl from './heart_empty.svg';
 import heartFilledUrl from './heart_filled.svg';
@@ -39,6 +40,8 @@ export type CommentProps = {
   onToggleLike?: (action: ToggleLikeAction) => void;
   onEdit?: (action: CommentEditAction) => void;
   onDelete?: (action: CommentEditAction) => void;
+  onImageClick?: (imageSrc: string, imageAlt: string) => void;
+  editor?: ReactNode;
 };
 
 const DEFAULT_MAX_DEPTH_INDENT = 8;
@@ -105,12 +108,33 @@ export const Comment = ({
   onToggleLike,
   onEdit,
   onDelete,
+  onImageClick,
+  editor,
 }: CommentProps) => {
+  const [isActionsMenuOpen, setIsActionsMenuOpen] = useState(false);
+  const actionsMenuRef = useRef<HTMLDivElement | null>(null);
   const displayUserName = resolveUserName(comment.userName);
   const timestampLabel = formatTimestamp(comment.timestamp);
   const dateTime = toDateTimeAttribute(comment.timestamp);
   const attachmentUrl = comment.imageUrl?.trim() || null;
   const likeButtonLabel = likedByViewer ? 'Unlike comment' : 'Like comment';
+
+  useEffect(() => {
+    if (!isActionsMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!actionsMenuRef.current || actionsMenuRef.current.contains(event.target as Node)) {
+        return;
+      }
+
+      setIsActionsMenuOpen(false);
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [isActionsMenuOpen]);
 
   return (
     <article
@@ -132,15 +156,25 @@ export const Comment = ({
           </time>
         </div>
         {onEdit || onDelete ? (
-          <details className="relative">
-            <summary className="flex h-7 w-7 cursor-pointer list-none items-center justify-center rounded-full text-lg leading-none text-slate-500 hover:bg-slate-100 hover:text-slate-900">
-              <span aria-label="Comment actions">...</span>
-            </summary>
-            <div className="absolute right-0 z-10 mt-1 min-w-28 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 text-sm shadow-lg">
+          <div ref={actionsMenuRef} className="relative">
+            <button
+              type="button"
+              aria-label="Comment actions"
+              aria-expanded={isActionsMenuOpen}
+              onClick={() => setIsActionsMenuOpen((isOpen) => !isOpen)}
+              className="flex h-7 w-7 items-center justify-center rounded-full text-lg leading-none text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+            >
+              ...
+            </button>
+            {isActionsMenuOpen ? (
+              <div className="absolute right-0 z-10 mt-1 min-w-28 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 text-sm shadow-lg">
               {onEdit ? (
                 <button
                   type="button"
-                  onClick={() => onEdit({ commentId })}
+                  onClick={() => {
+                    setIsActionsMenuOpen(false);
+                    onEdit({ commentId });
+                  }}
                   disabled={actionsDisabled}
                   className="block w-full px-3 py-2 text-left text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                 >
@@ -150,59 +184,71 @@ export const Comment = ({
               {onDelete ? (
                 <button
                   type="button"
-                  onClick={() => onDelete({ commentId })}
+                  onClick={() => {
+                    setIsActionsMenuOpen(false);
+                    onDelete({ commentId });
+                  }}
                   disabled={actionsDisabled}
                   className="block w-full px-3 py-2 text-left text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   Delete
                 </button>
               ) : null}
-            </div>
-          </details>
+              </div>
+            ) : null}
+          </div>
         ) : null}
       </header>
 
-      <p className="whitespace-pre-wrap text-sm leading-6 text-slate-900">{comment.text}</p>
+      {editor || (
+        <>
+          <p className="whitespace-pre-wrap text-sm leading-6 text-slate-900">{comment.text}</p>
 
-      {attachmentUrl ? (
-        <a href={attachmentUrl} target="_blank" rel="noreferrer" className="mt-3 block w-fit">
-          <img
-            src={attachmentUrl}
-            alt={`Attachment for comment ${commentId}`}
-            loading="lazy"
-            className="max-h-72 w-auto max-w-full rounded-lg border border-slate-200 object-contain"
-          />
-        </a>
-      ) : null}
+          {attachmentUrl ? (
+            <button
+              type="button"
+              onClick={() => onImageClick?.(attachmentUrl, `Attachment for comment ${commentId}`)}
+              className="mt-3 block w-fit cursor-zoom-in rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2"
+            >
+              <img
+                src={attachmentUrl}
+                alt={`Attachment for comment ${commentId}`}
+                loading="lazy"
+                className="max-h-72 w-auto max-w-full rounded-lg border border-slate-200 object-contain"
+              />
+            </button>
+          ) : null}
 
-      <footer className="mt-3 flex items-center gap-3 text-xs">
-        <button
-          type="button"
-          onClick={() => onReply?.({ replyToCommentId: commentId })}
-          disabled={actionsDisabled || !onReply}
-          className="rounded-full px-2 py-1 font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          Reply
-        </button>
-        <button
-          type="button"
-          aria-label={likeButtonLabel}
-          onClick={() => onToggleLike?.({ commentId, shouldLike: !likedByViewer })}
-          disabled={actionsDisabled || !onToggleLike}
-          className="group relative flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-rose-50 active:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          <span className="absolute h-8 w-8 rounded-full bg-rose-300 opacity-0 group-active:animate-ping group-active:opacity-30" aria-hidden="true" />
-          <img
-            src={likedByViewer ? heartFilledUrl : heartEmptyUrl}
-            alt=""
-            className="relative h-4 w-4 transition-transform duration-150 group-active:scale-125"
-            aria-hidden="true"
-          />
-        </button>
-        <span className="text-slate-500" aria-label={`Like count ${likeCount}`}>
-          {likeCount} like{likeCount === 1 ? '' : 's'}
-        </span>
-      </footer>
+          <footer className="mt-3 flex items-center gap-3 text-xs">
+            <button
+              type="button"
+              onClick={() => onReply?.({ replyToCommentId: commentId })}
+              disabled={actionsDisabled || !onReply}
+              className="rounded-full px-2 py-1 font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Reply
+            </button>
+            <button
+              type="button"
+              aria-label={likeButtonLabel}
+              onClick={() => onToggleLike?.({ commentId, shouldLike: !likedByViewer })}
+              disabled={actionsDisabled || !onToggleLike}
+              className="group relative flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-rose-50 active:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <span className="absolute h-8 w-8 rounded-full bg-rose-300 opacity-0 group-active:animate-ping group-active:opacity-30" aria-hidden="true" />
+              <img
+                src={likedByViewer ? heartFilledUrl : heartEmptyUrl}
+                alt=""
+                className="relative h-4 w-4 transition-transform duration-150 group-active:scale-125"
+                aria-hidden="true"
+              />
+            </button>
+            <span className="text-slate-500" aria-label={`Like count ${likeCount}`}>
+              {likeCount} like{likeCount === 1 ? '' : 's'}
+            </span>
+          </footer>
+        </>
+      )}
     </article>
   );
 };
@@ -222,6 +268,7 @@ export type ThreadProps = {
   onToggleLike?: (action: ToggleLikeAction) => void;
   onEdit?: (action: CommentEditAction) => void;
   onDelete?: (action: CommentEditAction) => void;
+  renderCommentEditor?: CommentSlotRender;
   renderAfterComment?: CommentSlotRender;
   emptyState?: ReactNode;
 };
@@ -260,9 +307,11 @@ export const Thread = ({
   onToggleLike,
   onEdit,
   onDelete,
+  renderCommentEditor,
   renderAfterComment,
   emptyState,
 }: ThreadProps) => {
+  const [lightboxImage, setLightboxImage] = useState<{ src: string; alt: string } | null>(null);
   const graph = useMemo(() => buildThreadGraph(thread), [thread]);
   const disconnectedRootIds = useMemo(() => getOrphanRootCommentIds(graph), [graph]);
   const hasRoot = Boolean(thread.commentsById[thread.rootCommentId]);
@@ -315,6 +364,8 @@ export const Thread = ({
           onToggleLike={onToggleLike}
           onEdit={canEdit ? onEdit : undefined}
           onDelete={canDelete ? onDelete : undefined}
+          onImageClick={(src, alt) => setLightboxImage({ src, alt })}
+          editor={renderCommentEditor?.(commentId)}
         />
         {renderAfterComment?.(commentId)}
         {childIds.length > 0 ? (
@@ -374,6 +425,13 @@ export const Thread = ({
           </ul>
         </details>
       ) : null}
+
+      <ImageLightbox
+        open={Boolean(lightboxImage)}
+        imageSrc={lightboxImage?.src ?? ''}
+        imageAlt={lightboxImage?.alt ?? 'Comment attachment'}
+        onClose={() => setLightboxImage(null)}
+      />
     </section>
   );
 };

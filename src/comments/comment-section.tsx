@@ -1,8 +1,10 @@
+import { Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle } from '@mui/material';
 import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { PatreonContext } from '../context/PatreonContext';
 import { Thread as ThreadView } from './comments';
 import { fetchCommentLikedUserNames, fetchThreadsForPage, sendThreadMutation } from './comments-api';
 import { Comment, CommentId, PageLocationId, Thread, ThreadLocationId, toPageLocationId } from './dataModel';
+import { EmbeddedMediaInput } from './embedded-media-input';
 
 type CommentInputProps = {
   autoFocus?: boolean;
@@ -11,8 +13,10 @@ type CommentInputProps = {
   submitLabel?: string;
   forceAnonymous?: boolean;
   initialText?: string;
+  initialImageUrl?: string | null;
+  embedded?: boolean;
   onCancel?: () => void;
-  onSubmit: (text: string, commentAnonymously: boolean) => Promise<void> | void;
+  onSubmit: (text: string, commentAnonymously: boolean, imageUrl: string | null) => Promise<void> | void;
 };
 
 export type CommentSectionProps = {
@@ -45,11 +49,11 @@ const normalizePageLocation = (locationId: PageLocationId | ThreadLocationId): P
   return locationId;
 };
 
-const createComment = (text: string, userName: string | null): Comment => ({
+const createComment = (text: string, userName: string | null, imageUrl: string | null): Comment => ({
   timestamp: Date.now(),
   userName,
   text,
-  imageUrl: null,
+  imageUrl,
   replyIds: [],
 });
 
@@ -108,10 +112,13 @@ const CommentInput = ({
   submitLabel = 'Comment',
   forceAnonymous = false,
   initialText = '',
+  initialImageUrl = null,
+  embedded = false,
   onCancel,
   onSubmit,
 }: CommentInputProps) => {
   const [text, setText] = useState(initialText);
+  const [imageUrl, setImageUrl] = useState<string | null>(initialImageUrl);
   const [isFocused, setIsFocused] = useState(autoFocus);
   const [commentAnonymously, setCommentAnonymously] = useState(forceAnonymous);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -120,6 +127,10 @@ const CommentInput = ({
   useEffect(() => {
     setText(initialText);
   }, [initialText]);
+
+  useEffect(() => {
+    setImageUrl(initialImageUrl);
+  }, [initialImageUrl]);
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -147,6 +158,7 @@ const CommentInput = ({
 
   const handleCancel = () => {
     setText('');
+    setImageUrl(initialImageUrl);
     setCommentAnonymously(forceAnonymous);
     setIsFocused(false);
     onCancel?.();
@@ -158,14 +170,21 @@ const CommentInput = ({
       return;
     }
 
-    await onSubmit(trimmedText, commentAnonymously);
+    await onSubmit(trimmedText, commentAnonymously, imageUrl);
     setText('');
+    setImageUrl(null);
     setCommentAnonymously(forceAnonymous);
     setIsFocused(false);
   };
 
   return (
-    <div className="rounded-2xl border border-transparent bg-white p-3 shadow-sm transition-colors focus-within:border-slate-200">
+    <div
+      className={
+        embedded
+          ? 'bg-transparent'
+          : 'rounded-2xl border border-transparent bg-white p-3 shadow-sm transition-colors focus-within:border-slate-200'
+      }
+    >
       <textarea
         ref={textareaRef}
         rows={1}
@@ -177,18 +196,35 @@ const CommentInput = ({
         className={commentInputBaseClass}
       />
 
+      {imageUrl ? (
+        <div className="mt-3 w-fit max-w-full rounded-xl border border-slate-200 bg-slate-50 p-2">
+          <img src={imageUrl} alt="Attached media preview" className="max-h-60 max-w-full rounded-lg object-contain" />
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => setImageUrl(null)}
+            className="mt-2 rounded-full px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Remove image
+          </button>
+        </div>
+      ) : null}
+
       {showActions ? (
         <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-          <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-600">
-            <input
-              type="checkbox"
-              checked={commentAnonymously}
-              disabled={disabled || forceAnonymous}
-              onChange={(event) => setCommentAnonymously(event.target.checked)}
-              className="h-4 w-4 rounded border-slate-300 text-slate-900"
-            />
-            Comment Anonymously
-          </label>
+          <div className="flex flex-wrap items-center gap-3">
+            <EmbeddedMediaInput disabled={disabled} onAttach={setImageUrl} />
+            <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-600">
+              <input
+                type="checkbox"
+                checked={commentAnonymously}
+                disabled={disabled || forceAnonymous}
+                onChange={(event) => setCommentAnonymously(event.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-slate-900"
+              />
+              Comment Anonymously
+            </label>
+          </div>
 
           <div className="flex items-center gap-2">
             <button
@@ -224,6 +260,7 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
   const [commentsLikedByUser, setCommentsLikedByUser] = useState<Set<CommentId>>(() => new Set<CommentId>());
   const [replyingToCommentId, setReplyingToCommentId] = useState<CommentId | null>(null);
   const [editingCommentId, setEditingCommentId] = useState<CommentId | null>(null);
+  const [pendingDeleteCommentId, setPendingDeleteCommentId] = useState<CommentId | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -299,10 +336,10 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
     return null;
   };
 
-  const handleStartThread = async (text: string, commentAnonymously: boolean) => {
+  const handleStartThread = async (text: string, commentAnonymously: boolean, imageUrl: string | null) => {
     const commentId = createCommentId();
     const userName = forceAnonymous || commentAnonymously ? null : signedInUserName;
-    const rootComment = createComment(text, userName);
+    const rootComment = createComment(text, userName, imageUrl);
 
     setIsSubmitting(true);
     setError(null);
@@ -327,7 +364,7 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
     }
   };
 
-  const handleReply = async (text: string, commentAnonymously: boolean, replyingTo: CommentId) => {
+  const handleReply = async (text: string, commentAnonymously: boolean, imageUrl: string | null, replyingTo: CommentId) => {
     const commentId = createCommentId();
     const userName = forceAnonymous || commentAnonymously ? null : signedInUserName;
 
@@ -339,7 +376,7 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
         type: 'upsert-comment',
         commentId,
         replyingTo,
-        comment: createComment(text, userName),
+        comment: createComment(text, userName, imageUrl),
       });
 
       if (response.type === 'threads-updated') {
@@ -353,7 +390,7 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
     }
   };
 
-  const handleEdit = async (text: string, commentAnonymously: boolean, commentId: CommentId) => {
+  const handleEdit = async (text: string, commentAnonymously: boolean, imageUrl: string | null, commentId: CommentId) => {
     const existing = findComment(commentId);
     if (!existing) {
       setError('Could not find comment to edit.');
@@ -374,6 +411,7 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
           ...existing.comment,
           text,
           userName,
+          imageUrl,
           timestamp: Date.now(),
         },
       });
@@ -390,11 +428,6 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
   };
 
   const handleDelete = async (commentId: CommentId) => {
-    const confirmed = window.confirm('Delete this comment and all replies to it?');
-    if (!confirmed) {
-      return;
-    }
-
     setIsSubmitting(true);
     setError(null);
 
@@ -413,6 +446,7 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
         if (editingCommentId === commentId) {
           setEditingCommentId(null);
         }
+        setPendingDeleteCommentId(null);
       }
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : 'Could not delete comment.');
@@ -534,22 +568,27 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
               setReplyingToCommentId(null);
               setEditingCommentId(commentId);
             }}
-            onDelete={({ commentId }) => void handleDelete(commentId)}
-            renderAfterComment={(commentId) =>
+            onDelete={({ commentId }) => setPendingDeleteCommentId(commentId)}
+            renderCommentEditor={(commentId) =>
               editingCommentId === commentId ? (
-                <div className="mt-3 pl-2">
+                <div className="mt-3">
                   <CommentInput
                     autoFocus
                     disabled={isSubmitting}
+                    embedded
                     forceAnonymous={forceAnonymous}
                     initialText={findComment(commentId)?.comment.text ?? ''}
+                    initialImageUrl={findComment(commentId)?.comment.imageUrl ?? null}
                     placeholder="Edit your comment..."
                     submitLabel="Comment"
                     onCancel={() => setEditingCommentId(null)}
-                    onSubmit={(text, commentAnonymously) => handleEdit(text, commentAnonymously, commentId)}
+                    onSubmit={(text, commentAnonymously, imageUrl) => handleEdit(text, commentAnonymously, imageUrl, commentId)}
                   />
                 </div>
-              ) : replyingToCommentId === commentId ? (
+              ) : null
+            }
+            renderAfterComment={(commentId) =>
+              replyingToCommentId === commentId ? (
                 <div className="mt-3 pl-2">
                   <CommentInput
                     autoFocus
@@ -558,7 +597,7 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
                     placeholder="Add a reply..."
                     submitLabel="Reply"
                     onCancel={() => setReplyingToCommentId(null)}
-                    onSubmit={(text, commentAnonymously) => handleReply(text, commentAnonymously, commentId)}
+                    onSubmit={(text, commentAnonymously, imageUrl) => handleReply(text, commentAnonymously, imageUrl, commentId)}
                   />
                 </div>
               ) : null
@@ -566,6 +605,32 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
           />
         ))}
       </div>
+
+      <Dialog open={pendingDeleteCommentId !== null} onClose={() => setPendingDeleteCommentId(null)}>
+        <DialogTitle>Delete comment?</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            This will delete the comment and every reply below it. This action cannot be undone.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPendingDeleteCommentId(null)} disabled={isSubmitting}>
+            Cancel
+          </Button>
+          <Button
+            color="error"
+            variant="contained"
+            disabled={isSubmitting || pendingDeleteCommentId === null}
+            onClick={() => {
+              if (pendingDeleteCommentId) {
+                void handleDelete(pendingDeleteCommentId);
+              }
+            }}
+          >
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
     </section>
   );
 };
