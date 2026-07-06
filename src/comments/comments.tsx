@@ -301,21 +301,24 @@ export const Comment = ({
               const hasReacted = viewerReactionEmojis?.has(emoji) ?? false;
 
               return (
-                <span
+                <button
                   key={emoji}
-                  className={`rounded-full border px-2 py-1 ${
+                  type="button"
+                  aria-label={`${hasReacted ? 'Remove' : 'Add'} ${emoji} reaction`}
+                  disabled={actionsDisabled || !onToggleReaction}
+                  onClick={() => onToggleReaction?.({ commentId, emoji, shouldAdd: !hasReacted })}
+                  className={`rounded-full border px-2 py-1 transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
                     hasReacted
                       ? isDarkMode
                         ? 'border-sky-400 bg-sky-950 text-sky-100'
                         : 'border-sky-500 bg-sky-50 text-sky-900'
                       : isDarkMode
-                        ? 'border-slate-700 text-slate-300'
-                        : 'border-slate-200 text-slate-600'
+                        ? 'border-slate-700 text-slate-300 enabled:hover:bg-slate-800'
+                        : 'border-slate-200 text-slate-600 enabled:hover:bg-slate-100'
                   }`}
-                  aria-label={`${count} ${emoji} reaction${count === 1 ? '' : 's'}`}
                 >
                   {emoji} {count}
-                </span>
+                </button>
               );
             })}
           </footer>
@@ -425,7 +428,7 @@ export const Thread = ({
     nextBranch.add(commentId);
     const shouldHighlight = Boolean(signedInUserName && comment.userName === signedInUserName);
     const canEdit = Boolean(signedInUserName && comment.userName === signedInUserName);
-    const canDelete = canEdit || signedInUserName === 'B. Warnecke';
+    const canDelete = canEdit;
     const reactions = reactionsByCommentId[commentId] ?? {};
     const viewerReactionEmojis = new Set(
       signedInUserName

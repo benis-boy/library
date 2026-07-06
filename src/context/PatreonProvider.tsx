@@ -67,6 +67,7 @@ const restorePendingReaderRoute = (expectedNonce?: string | null) => {
 export const PatreonProvider = ({ children }: { children: ReactNode }) => {
   const [userInfo, setUserInfo] = useState<MembershipData | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [signedUser, setSignedUser] = useState<string | null>(null);
   const [isAuthResolving, setIsAuthResolving] = useState(() => new URLSearchParams(window.location.search).has('code'));
   const [encryptionPassword, setEncryptionPassword] = useState('');
   const [encryptionPasswordV2, setEncryptionPasswordV2] = useState<Record<SourceType, string>>({
@@ -85,6 +86,7 @@ export const PatreonProvider = ({ children }: { children: ReactNode }) => {
     }
     setIsLoggedIn(false);
     setUserInfo(null);
+    setSignedUser(null);
     setEncryptionPassword('');
     setEncryptionPasswordV2({
       PSSJ: 'unused',
@@ -111,9 +113,15 @@ export const PatreonProvider = ({ children }: { children: ReactNode }) => {
       try {
         const token = JSON.parse(_token) as PatreonVerifierResponseBody;
 
-        const { userInfo, encryption_password, encryption_passwordv2 } = token;
+        const { userInfo, signedUser, encryption_password, encryption_passwordv2 } = token;
+        if (typeof signedUser !== 'string') {
+          resetSession(false);
+          return;
+        }
+
         setUserInfo(userInfo);
         setIsLoggedIn(true);
+        setSignedUser(signedUser);
         setEncryptionPassword(encryption_password);
         setEncryptionPasswordV2(encryption_passwordv2);
       } catch (e) {
@@ -168,11 +176,18 @@ export const PatreonProvider = ({ children }: { children: ReactNode }) => {
     }
 
     const parsedData = data as Partial<PatreonVerifierResponseBody> | null;
-    if (parsedData && parsedData.userInfo && parsedData.encryption_passwordv2 && typeof parsedData.encryption_password === 'string') {
+    if (
+      parsedData &&
+      parsedData.userInfo &&
+      typeof parsedData.signedUser === 'string' &&
+      parsedData.encryption_passwordv2 &&
+      typeof parsedData.encryption_password === 'string'
+    ) {
       localStorage.setItem('patreon_token', JSON.stringify(parsedData));
-      const { userInfo, encryption_password, encryption_passwordv2 } = parsedData as PatreonVerifierResponseBody;
+      const { userInfo, signedUser, encryption_password, encryption_passwordv2 } = parsedData as PatreonVerifierResponseBody;
       setUserInfo(userInfo);
       setIsLoggedIn(true);
+      setSignedUser(signedUser);
       setEncryptionPassword(encryption_password);
       setEncryptionPasswordV2(encryption_passwordv2);
       return true;
@@ -235,6 +250,7 @@ export const PatreonProvider = ({ children }: { children: ReactNode }) => {
         userInfo,
         isLoggedIn,
         isSupporter: !!userInfo?.supportsMe,
+        signedUser,
         encryptionPassword,
         encryptionPasswordV2,
         handleLogin,

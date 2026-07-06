@@ -1,6 +1,7 @@
 import { Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, TextField } from '@mui/material';
 import { useContext, useEffect, useState } from 'react';
 import { ConfigurationContext } from '../context/ConfigurationContext';
+import { COMMENT_MEDIA_URL_MAX_LENGTH } from './dataModel';
 import imageInputUrl from './image-input.svg';
 
 type EmbeddedMediaInputProps = {
@@ -38,14 +39,22 @@ export const EmbeddedMediaInput = ({ disabled = false, onAttach }: EmbeddedMedia
   const [validatedUrl, setValidatedUrl] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const normalizedUrl = normalizeImageUrl(url);
+  const isUrlLimitVisible = normalizedUrl.length >= COMMENT_MEDIA_URL_MAX_LENGTH;
+  const isUrlOverLimit = normalizedUrl.length > COMMENT_MEDIA_URL_MAX_LENGTH;
 
   useEffect(() => {
-    const normalizedUrl = normalizeImageUrl(url);
     setValidatedUrl(null);
     setError(null);
 
     if (!open || !normalizedUrl) {
       setChecking(false);
+      return;
+    }
+
+    if (isUrlOverLimit) {
+      setChecking(false);
+      setError(`URL must be ${COMMENT_MEDIA_URL_MAX_LENGTH} characters or fewer.`);
       return;
     }
 
@@ -83,7 +92,7 @@ export const EmbeddedMediaInput = ({ disabled = false, onAttach }: EmbeddedMedia
       cancelled = true;
       window.clearTimeout(timeoutId);
     };
-  }, [open, url]);
+  }, [isUrlOverLimit, normalizedUrl, open]);
 
   const close = () => {
     setOpen(false);
@@ -148,7 +157,7 @@ export const EmbeddedMediaInput = ({ disabled = false, onAttach }: EmbeddedMedia
             value={url}
             disabled={disabled}
             error={Boolean(error)}
-            helperText={error || (checking ? 'Checking image...' : ' ')}
+            helperText={error || (checking ? 'Checking image...' : isUrlLimitVisible ? `${normalizedUrl.length}/${COMMENT_MEDIA_URL_MAX_LENGTH} characters` : ' ')}
             onChange={(event) => setUrl(event.target.value)}
             InputLabelProps={{ className: isDarkMode ? 'text-slate-300' : undefined }}
             FormHelperTextProps={{ className: isDarkMode ? 'text-slate-400' : undefined }}
@@ -196,7 +205,7 @@ export const EmbeddedMediaInput = ({ disabled = false, onAttach }: EmbeddedMedia
           <Button
             variant="contained"
             onClick={attach}
-            disabled={!validatedUrl || checking}
+            disabled={!validatedUrl || checking || isUrlOverLimit}
             sx={
               isDarkMode
                 ? {

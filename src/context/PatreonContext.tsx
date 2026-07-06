@@ -5,6 +5,7 @@ export type PatreonContextType = {
   userInfo: MembershipData | null;
   isLoggedIn: boolean;
   isSupporter: boolean;
+  signedUser: string | null;
   encryptionPassword: string;
   encryptionPasswordV2: Record<SourceType, string>;
   handleLogin: () => void;
@@ -22,6 +23,7 @@ export interface PatreonVerifierResponseBody {
   expires_in: number;
   token_type: string;
   userInfo: MembershipData;
+  signedUser: string;
   encryption_password: string;
   encryption_passwordv2: Record<SourceType, string>;
 }

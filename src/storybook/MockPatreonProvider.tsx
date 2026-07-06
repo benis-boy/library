@@ -39,6 +39,7 @@ export const MockPatreonProvider = ({
           : null,
         isLoggedIn,
         isSupporter: loggedInSupporter,
+        signedUser: isLoggedIn ? 'storybook-signed-user' : null,
         encryptionPassword,
         encryptionPasswordV2: {
           ...defaultEncryptionPasswordV2,

@@ -5,7 +5,18 @@ import { ConfigurationContext } from '../context/ConfigurationContext';
 import { PatreonContext } from '../context/PatreonContext';
 import { Thread as ThreadView } from './comments';
 import { fetchCommentReactions, fetchThreadsForPage, sendThreadMutation } from './comments-api';
-import { Comment, CommentId, CommentReactions, PageLocationId, Thread, ThreadLocationId, toPageLocationId } from './dataModel';
+import {
+  Comment,
+  CommentId,
+  COMMENT_MEDIA_URL_MAX_LENGTH,
+  COMMENT_TEXT_MAX_LENGTH,
+  CommentReactions,
+  MutationOwner,
+  PageLocationId,
+  Thread,
+  ThreadLocationId,
+  toPageLocationId,
+} from './dataModel';
 import { EmbeddedMediaInput } from './embedded-media-input';
 
 type CommentInputProps = {
@@ -67,6 +78,7 @@ type LoadedComments = {
 const commentLoadCache = new Map<string, { cachedAt: number; promise: Promise<LoadedComments> }>();
 const COMMENT_LOAD_CACHE_MS = 1000;
 const REACTION_MUTATION_DEBOUNCE_MS = 5000;
+const COMMENT_LIMIT_WARNING_THRESHOLD = 0.9;
 
 const getCommentLoadCacheKey = (pageLocationId: PageLocationId, signedInUserName: string | null) => {
   return `${pageLocationId.bookId}:${pageLocationId.chapterId}:${signedInUserName ?? 'anonymous'}`;
@@ -122,6 +134,12 @@ const CommentInput = ({
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const emojiPickerRef = useRef<HTMLDivElement | null>(null);
   const showActions = isFocused || text.trim().length > 0;
+  const textLength = text.length;
+  const imageUrlLength = imageUrl?.length ?? 0;
+  const isTextLimitVisible = textLength >= COMMENT_TEXT_MAX_LENGTH * COMMENT_LIMIT_WARNING_THRESHOLD;
+  const isImageUrlLimitVisible = imageUrlLength >= COMMENT_MEDIA_URL_MAX_LENGTH * COMMENT_LIMIT_WARNING_THRESHOLD;
+  const isTextOverLimit = textLength > COMMENT_TEXT_MAX_LENGTH;
+  const isImageUrlOverLimit = imageUrlLength > COMMENT_MEDIA_URL_MAX_LENGTH;
 
   useEffect(() => {
     setText(initialText);
@@ -207,7 +225,7 @@ const CommentInput = ({
 
   const handleSubmit = async () => {
     const trimmedText = text.trim();
-    if (!trimmedText || disabled) {
+    if (!trimmedText || disabled || isTextOverLimit || isImageUrlOverLimit) {
       return;
     }
 
@@ -248,6 +266,14 @@ const CommentInput = ({
         className={commentInputClass}
       />
 
+      {isTextLimitVisible ? (
+        <div
+          className={`mt-1 text-xs ${isTextOverLimit ? 'text-red-500' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}
+        >
+          {textLength}/{COMMENT_TEXT_MAX_LENGTH} characters
+        </div>
+      ) : null}
+
       {imageUrl ? (
         <div
           className={`mt-3 w-fit max-w-full rounded-xl border p-2 ${
@@ -265,6 +291,13 @@ const CommentInput = ({
           >
             Remove image
           </button>
+          {isImageUrlLimitVisible ? (
+            <div
+              className={`mt-2 text-xs ${isImageUrlOverLimit ? 'text-red-500' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}
+            >
+              Media URL: {imageUrlLength}/{COMMENT_MEDIA_URL_MAX_LENGTH} characters
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -327,7 +360,7 @@ const CommentInput = ({
             <button
               type="button"
               onClick={() => void handleSubmit()}
-              disabled={disabled || text.trim().length === 0}
+              disabled={disabled || text.trim().length === 0 || isTextOverLimit || isImageUrlOverLimit}
               className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed ${
                 isDarkMode
                   ? 'bg-slate-100 text-slate-950 hover:bg-white disabled:bg-slate-700 disabled:text-slate-400'
@@ -352,7 +385,13 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
     : patreonContext?.isLoggedIn
       ? (patreonContext.userInfo?.userName ?? null)
       : null;
-  const forceAnonymous = signedInUserName === null;
+  const signedUser = isLocalLibraryUrl()
+    ? (import.meta.env.VITE_LOCAL_ADMIN_SIGNED ?? null)
+    : patreonContext?.isLoggedIn
+      ? (patreonContext?.signedUser ?? null)
+      : null;
+  const canUseSignedIdentity = signedInUserName !== null && signedUser !== null;
+  const forceAnonymous = !canUseSignedIdentity;
   const [threads, setThreads] = useState<Thread[]>([]);
   const [reactionsByCommentId, setReactionsByCommentId] = useState<Record<CommentId, CommentReactions>>({});
   const [replyingToCommentId, setReplyingToCommentId] = useState<CommentId | null>(null);
@@ -450,9 +489,18 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
     return null;
   };
 
+  const getMutationOwner = (commentAnonymously = false): MutationOwner => {
+    if (commentAnonymously || !signedInUserName || !signedUser) {
+      return null;
+    }
+
+    return { userName: signedInUserName, signedUser };
+  };
+
   const handleStartThread = async (text: string, commentAnonymously: boolean, imageUrl: string | null) => {
     const commentId = createCommentId();
-    const userName = forceAnonymous || commentAnonymously ? null : signedInUserName;
+    const mutationOwner = getMutationOwner(commentAnonymously);
+    const userName = mutationOwner?.userName ?? null;
     const rootComment = createComment(text, userName, imageUrl);
 
     setIsSubmitting(true);
@@ -461,6 +509,7 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
     try {
       const response = await sendThreadMutation(pageLocationId, {
         type: 'start-thread',
+        mutationOwner,
         locationId: pageLocationId,
         rootCommentId: commentId,
         commentsById: {
@@ -485,7 +534,8 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
     replyingTo: CommentId
   ) => {
     const commentId = createCommentId();
-    const userName = forceAnonymous || commentAnonymously ? null : signedInUserName;
+    const mutationOwner = getMutationOwner(commentAnonymously);
+    const userName = mutationOwner?.userName ?? null;
 
     setIsSubmitting(true);
     setError(null);
@@ -493,6 +543,7 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
     try {
       const response = await sendThreadMutation(pageLocationId, {
         type: 'upsert-comment',
+        mutationOwner,
         commentId,
         replyingTo,
         comment: createComment(text, userName, imageUrl),
@@ -521,7 +572,8 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
       return;
     }
 
-    const userName = forceAnonymous || commentAnonymously ? null : signedInUserName;
+    const mutationOwner = getMutationOwner(commentAnonymously);
+    const userName = mutationOwner?.userName ?? null;
 
     setIsSubmitting(true);
     setError(null);
@@ -529,6 +581,7 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
     try {
       const response = await sendThreadMutation(pageLocationId, {
         type: 'upsert-comment',
+        mutationOwner,
         commentId,
         replyingTo: commentId,
         comment: {
@@ -558,6 +611,7 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
     try {
       const response = await sendThreadMutation(pageLocationId, {
         type: 'delete-comment',
+        mutationOwner: getMutationOwner(false),
         commentId,
         wasReplyingTo: commentId,
       });
@@ -603,8 +657,16 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
     };
   };
 
-  const handleToggleReaction = async ({ commentId, emoji, shouldAdd }: { commentId: CommentId; emoji: string; shouldAdd: boolean }) => {
-    if (!signedInUserName) {
+  const handleToggleReaction = async ({
+    commentId,
+    emoji,
+    shouldAdd,
+  }: {
+    commentId: CommentId;
+    emoji: string;
+    shouldAdd: boolean;
+  }) => {
+    if (!canUseSignedIdentity) {
       return;
     }
 
@@ -671,7 +733,10 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
         .map(([emoji]) => emoji)
     );
     const desiredEmojis = [...pendingReactionEmojis];
-    if (desiredEmojis.length === syncedReactionEmojis.size && desiredEmojis.every((emoji) => syncedReactionEmojis.has(emoji))) {
+    if (
+      desiredEmojis.length === syncedReactionEmojis.size &&
+      desiredEmojis.every((emoji) => syncedReactionEmojis.has(emoji))
+    ) {
       return;
     }
 
@@ -680,6 +745,7 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
         pageLocationIdRef.current,
         {
           type: 'set-comment-reactions',
+          mutationOwner: { userName, signedUser: signedUser ?? '' },
           commentId,
           emojis: desiredEmojis,
           userName,
@@ -741,7 +807,7 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
               setEditingCommentId(null);
               setReplyingToCommentId(replyToCommentId);
             }}
-            onToggleReaction={signedInUserName ? (action) => void handleToggleReaction(action) : undefined}
+            onToggleReaction={canUseSignedIdentity ? (action) => void handleToggleReaction(action) : undefined}
             onEdit={({ commentId }) => {
               setReplyingToCommentId(null);
               setEditingCommentId(commentId);

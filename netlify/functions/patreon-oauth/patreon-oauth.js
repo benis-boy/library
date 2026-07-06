@@ -1,3 +1,16 @@
+const crypto = require('crypto');
+
+const getCommentsAuthSecret = () => {
+  const secret = process.env.COMMENTS_AUTH_SECRET;
+  if (!secret) {
+    throw new Error('Missing COMMENTS_AUTH_SECRET.');
+  }
+
+  return secret;
+};
+
+const signUserName = (userName) => crypto.createHmac('sha256', getCommentsAuthSecret()).update(userName).digest('base64url');
+
 exports.handler = async (event, context) => {
   // Allow CORS requests from any origin
   const headers = {
@@ -125,6 +138,7 @@ exports.handler = async (event, context) => {
           (everPaidAnything && isAugust),
         currently_entitled_tiers: myMemberData?.relationships?.currently_entitled_tiers,
       };
+      const signedUser = signUserName(userName);
 
       if (filteredMembershipData.supportsMe) {
         encryption_passwordv2.WtDR = wtdrSecret;
@@ -138,6 +152,7 @@ exports.handler = async (event, context) => {
         body: JSON.stringify({
           ...token,
           userInfo: filteredMembershipData,
+          signedUser,
           membershipData: myMemberData,
           encryption_password,
           encryption_passwordv2,

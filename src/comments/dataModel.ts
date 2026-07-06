@@ -23,7 +23,16 @@ export type Comment = {
   imageUrl: string | null;
   replyIds: CommentId[];
   updated?: boolean;
+  mutationOwner?: MutationOwner;
 };
+
+export const COMMENT_TEXT_MAX_LENGTH = 2000;
+export const COMMENT_MEDIA_URL_MAX_LENGTH = 2048;
+
+export type MutationOwner = {
+  userName: string;
+  signedUser: string;
+} | null;
 
 export type Thread<RootCommentId extends CommentId = CommentId> = {
   locationId: ThreadLocationId;
@@ -41,23 +50,27 @@ export type CommentReactions = Record<string, CommentReactionUserNames>;
 export type ThreadMutation =
   | {
       type: 'start-thread';
+      mutationOwner: MutationOwner;
       locationId: ThreadLocationId;
       rootCommentId: CommentId;
       commentsById: Record<CommentId, Comment>; // minimum 1
     }
   | {
       type: 'upsert-comment';
+      mutationOwner: MutationOwner;
       commentId: CommentId;
       comment: Comment;
       replyingTo: CommentId;
     }
   | {
       type: 'delete-comment';
+      mutationOwner: MutationOwner;
       commentId: CommentId;
       wasReplyingTo: CommentId;
     }
   | {
       type: 'set-comment-reactions';
+      mutationOwner: MutationOwner;
       commentId: CommentId;
       emojis: string[];
       userName: string;

@@ -1,5 +1,9 @@
+const crypto = require('crypto');
+
 const COMMENT_KEY_PREFIX = `comments:v1`;
 const DEFAULT_REACTION_EMOJI = '❤️';
+const COMMENT_TEXT_MAX_LENGTH = 2000;
+const COMMENT_MEDIA_URL_MAX_LENGTH = 2048;
 
 const headers = {
   'Access-Control-Allow-Origin': '*',
@@ -97,6 +101,64 @@ const parseJsonBody = (event) => {
   }
 };
 
+const getCommentsAuthSecret = () => {
+  const secret = process.env.COMMENTS_AUTH_SECRET;
+  if (!secret) {
+    throw new Error('Missing COMMENTS_AUTH_SECRET.');
+  }
+
+  return secret;
+};
+
+const signUserName = (userName) => crypto.createHmac('sha256', getCommentsAuthSecret()).update(userName).digest('base64url');
+
+const safeEqual = (left, right) => {
+  const leftBuffer = Buffer.from(left);
+  const rightBuffer = Buffer.from(right);
+  return leftBuffer.length === rightBuffer.length && crypto.timingSafeEqual(leftBuffer, rightBuffer);
+};
+
+const isMutationOwner = (value) => {
+  return (
+    value === null ||
+    (typeof value?.userName === 'string' &&
+      value.userName.length > 0 &&
+      typeof value?.signedUser === 'string' &&
+      value.signedUser.length > 0)
+  );
+};
+
+const isVerifiedMutationOwner = (mutationOwner) => {
+  return mutationOwner !== null && safeEqual(signUserName(mutationOwner.userName), mutationOwner.signedUser);
+};
+
+const getVerifiedMutationOwner = (mutationOwner) => {
+  if (mutationOwner === null) {
+    return null;
+  }
+
+  if (!isVerifiedMutationOwner(mutationOwner)) {
+    return null;
+  }
+
+  return {
+    userName: mutationOwner.userName,
+    signedUser: mutationOwner.signedUser,
+  };
+};
+
+const doMutationOwnersMatch = (left, right) => {
+  return left !== null && right !== null && left.userName === right.userName && safeEqual(left.signedUser, right.signedUser);
+};
+
+const getMutationAuthError = (mutationOwner) => {
+  if (mutationOwner !== null && !isVerifiedMutationOwner(mutationOwner)) {
+    return 'Invalid comment user signature.';
+  }
+
+  return null;
+};
+
 const isPageLocationId = (value) => {
   return (
     typeof value?.bookId === 'string' &&
@@ -118,8 +180,38 @@ const isComment = (value) => {
     (typeof value.imageUrl === 'string' || value.imageUrl === null) &&
     Array.isArray(value.replyIds) &&
     value.replyIds.every((replyId) => typeof replyId === 'string') &&
-    (value.updated === undefined || typeof value.updated === 'boolean')
+    (value.updated === undefined || typeof value.updated === 'boolean') &&
+    (value.mutationOwner === undefined || isMutationOwner(value.mutationOwner))
   );
+};
+
+const getInvalidCommentLength = (comment) => {
+  if (comment.text.length > COMMENT_TEXT_MAX_LENGTH) {
+    return `Comment text must be ${COMMENT_TEXT_MAX_LENGTH} characters or fewer.`;
+  }
+
+  if (comment.imageUrl !== null && comment.imageUrl.length > COMMENT_MEDIA_URL_MAX_LENGTH) {
+    return `Media URL must be ${COMMENT_MEDIA_URL_MAX_LENGTH} characters or fewer.`;
+  }
+
+  return null;
+};
+
+const getInvalidMutationLength = (mutation) => {
+  if (mutation.type === 'start-thread') {
+    for (const comment of Object.values(mutation.commentsById)) {
+      const error = getInvalidCommentLength(comment);
+      if (error) {
+        return error;
+      }
+    }
+  }
+
+  if (mutation.type === 'upsert-comment') {
+    return getInvalidCommentLength(mutation.comment);
+  }
+
+  return null;
 };
 
 const isCommentsById = (value) => {
@@ -134,17 +226,24 @@ const isThreadMutation = (value) => {
   switch (value.type) {
     case 'start-thread':
       return (
+        isMutationOwner(value.mutationOwner) &&
         isThreadLocationId(value.locationId) &&
         typeof value.rootCommentId === 'string' &&
         isCommentsById(value.commentsById) &&
         Boolean(value.commentsById[value.rootCommentId])
       );
     case 'upsert-comment':
-      return typeof value.commentId === 'string' && isComment(value.comment) && typeof value.replyingTo === 'string';
+      return (
+        isMutationOwner(value.mutationOwner) &&
+        typeof value.commentId === 'string' &&
+        isComment(value.comment) &&
+        typeof value.replyingTo === 'string'
+      );
     case 'delete-comment':
-      return typeof value.commentId === 'string' && typeof value.wasReplyingTo === 'string';
+      return isMutationOwner(value.mutationOwner) && typeof value.commentId === 'string' && typeof value.wasReplyingTo === 'string';
     case 'set-comment-reactions':
       return (
+        isMutationOwner(value.mutationOwner) &&
         typeof value.commentId === 'string' &&
         Array.isArray(value.emojis) &&
         value.emojis.every((emoji) => typeof emoji === 'string' && emoji.length > 0) &&
@@ -154,6 +253,30 @@ const isThreadMutation = (value) => {
     default:
       return false;
   }
+};
+
+const sanitizeComment = (comment) => {
+  const { mutationOwner, ...sanitizedComment } = comment;
+  return sanitizedComment;
+};
+
+const sanitizeThread = (thread) => ({
+  ...thread,
+  commentsById: Object.fromEntries(Object.entries(thread.commentsById).map(([commentId, comment]) => [commentId, sanitizeComment(comment)])),
+});
+
+const sanitizeThreads = (threads) => threads.map(sanitizeThread);
+
+const commentWithOwner = (comment, mutationOwner) => ({
+  ...comment,
+  userName: mutationOwner?.userName ?? null,
+  mutationOwner,
+});
+
+const commentsWithOwner = (commentsById, mutationOwner) => {
+  return Object.fromEntries(
+    Object.entries(commentsById).map(([commentId, comment]) => [commentId, commentWithOwner(comment, mutationOwner)])
+  );
 };
 
 const getThreadKeysForPage = async (locationId) => {
@@ -217,6 +340,10 @@ const getReactionsForComment = async (commentId) => {
 
 const setReactionsForComment = async (commentId, reactions) => {
   await redisSet(toCommentReactionsRedisKey(commentId), normalizeCommentReactions(reactions));
+};
+
+const deleteReactionsForComment = async (commentId) => {
+  await redisDelete(toCommentReactionsRedisKey(commentId));
 };
 
 const setUserReactionsForComment = (reactions, userName, emojis) => {
@@ -284,22 +411,29 @@ const findThreadEntryByCommentId = async (threadKeys, commentId) => {
   return null;
 };
 
-const upsertCommentInThread = (thread, mutation) => {
+const upsertCommentInThread = (thread, mutation, mutationOwner) => {
   if (includesComment(thread, mutation.commentId)) {
+    const existingComment = thread.commentsById[mutation.commentId];
+    if (!doMutationOwnersMatch(existingComment.mutationOwner ?? null, mutationOwner)) {
+      return { error: 'Only the comment owner can edit this comment.' };
+    }
+
     return {
-      ...thread,
-      commentsById: {
-        ...thread.commentsById,
-        [mutation.commentId]: {
-          ...mutation.comment,
-          replyIds: thread.commentsById[mutation.commentId].replyIds,
+      thread: {
+        ...thread,
+        commentsById: {
+          ...thread.commentsById,
+          [mutation.commentId]: {
+            ...commentWithOwner(mutation.comment, mutationOwner),
+            replyIds: existingComment.replyIds,
+          },
         },
       },
     };
   }
 
   if (!includesComment(thread, mutation.replyingTo)) {
-    return null;
+    return { error: 'Could not find a matching thread/comment for this mutation.' };
   }
 
   const replyingToComment = thread.commentsById[mutation.replyingTo];
@@ -308,14 +442,16 @@ const upsertCommentInThread = (thread, mutation) => {
     : [...replyingToComment.replyIds, mutation.commentId];
 
   return {
-    ...thread,
-    commentsById: {
-      ...thread.commentsById,
-      [mutation.replyingTo]: {
-        ...replyingToComment,
-        replyIds: nextReplyIds,
+    thread: {
+      ...thread,
+      commentsById: {
+        ...thread.commentsById,
+        [mutation.replyingTo]: {
+          ...replyingToComment,
+          replyIds: nextReplyIds,
+        },
+        [mutation.commentId]: commentWithOwner(mutation.comment, mutationOwner),
       },
-      [mutation.commentId]: mutation.comment,
     },
   };
 };
@@ -344,13 +480,17 @@ const collectCommentSubtreeIds = (commentsById, rootCommentId) => {
   return idsToDelete;
 };
 
-const deleteCommentFromThread = (thread, mutation) => {
+const deleteCommentFromThread = (thread, mutation, mutationOwner) => {
   if (!includesComment(thread, mutation.commentId)) {
     return { didMutate: false, thread };
   }
 
+  if (!doMutationOwnersMatch(thread.commentsById[mutation.commentId].mutationOwner ?? null, mutationOwner)) {
+    return { error: 'Only the comment owner can delete this comment.' };
+  }
+
   if (thread.rootCommentId === mutation.commentId) {
-    return { didMutate: true, thread: null };
+    return { didMutate: true, thread: null, deletedCommentIds: Object.keys(thread.commentsById) };
   }
 
   const commentIdsToDelete = collectCommentSubtreeIds(thread.commentsById, mutation.commentId);
@@ -367,11 +507,12 @@ const deleteCommentFromThread = (thread, mutation) => {
   }
 
   if (!nextCommentsById[thread.rootCommentId]) {
-    return { didMutate: true, thread: null };
+    return { didMutate: true, thread: null, deletedCommentIds: Array.from(commentIdsToDelete) };
   }
 
   return {
     didMutate: true,
+    deletedCommentIds: Array.from(commentIdsToDelete),
     thread: {
       ...thread,
       commentsById: nextCommentsById,
@@ -414,7 +555,7 @@ const handleGet = async (event) => {
 
   return json(200, {
     pageLocationId,
-    chapterThreads,
+    chapterThreads: sanitizeThreads(chapterThreads),
     lineThreadKeys,
   });
 };
@@ -426,10 +567,24 @@ const handlePost = async (event) => {
   }
 
   const { mutation } = request;
+  const invalidLengthError = getInvalidMutationLength(mutation);
+  if (invalidLengthError) {
+    return json(400, { error: invalidLengthError });
+  }
+
+  const authError = getMutationAuthError(mutation.mutationOwner);
+  if (authError) {
+    return json(401, { error: authError });
+  }
+  const mutationOwner = getVerifiedMutationOwner(mutation.mutationOwner);
 
   if (mutation.type === 'set-comment-reactions') {
+    if (!mutationOwner || mutation.userName !== mutationOwner.userName) {
+      return json(403, { error: 'Signed-in user is required to update reactions.' });
+    }
+
     const reactions = await getReactionsForComment(mutation.commentId);
-    const nextReactions = setUserReactionsForComment(reactions, mutation.userName, mutation.emojis);
+    const nextReactions = setUserReactionsForComment(reactions, mutationOwner.userName, mutation.emojis);
     await setReactionsForComment(mutation.commentId, nextReactions);
 
     return json(200, {
@@ -452,7 +607,7 @@ const handlePost = async (event) => {
     const nextThread = {
       locationId: mutation.locationId,
       rootCommentId: mutation.rootCommentId,
-      commentsById: mutation.commentsById,
+      commentsById: commentsWithOwner(mutation.commentsById, mutationOwner),
     };
     const threadKey = await setThread(nextThread);
     await setThreadKeysForPage(pageLocationId, [...threadKeys.filter((existingThreadKey) => existingThreadKey !== threadKey), threadKey]);
@@ -462,7 +617,7 @@ const handlePost = async (event) => {
     return json(200, {
       type: 'threads-updated',
       pageLocationId,
-      chapterThreads,
+      chapterThreads: sanitizeThreads(chapterThreads),
       lineThreadKeys,
     });
   }
@@ -473,17 +628,17 @@ const handlePost = async (event) => {
       return json(404, { error: 'Could not find a matching thread/comment for this mutation.' });
     }
 
-    const nextThread = upsertCommentInThread(entry.thread, mutation);
-    if (!nextThread) {
-      return json(404, { error: 'Could not find a matching thread/comment for this mutation.' });
+    const result = upsertCommentInThread(entry.thread, mutation, mutationOwner);
+    if (result.error) {
+      return json(result.error.startsWith('Only') ? 403 : 404, { error: result.error });
     }
 
-    await setThread(nextThread);
+    await setThread(result.thread);
     const { chapterThreads, lineThreadKeys } = await splitThreadKeysByLocation(threadKeys);
     return json(200, {
       type: 'threads-updated',
       pageLocationId,
-      chapterThreads,
+      chapterThreads: sanitizeThreads(chapterThreads),
       lineThreadKeys,
     });
   }
@@ -494,7 +649,11 @@ const handlePost = async (event) => {
       return json(404, { error: 'Could not find a matching thread/comment for this mutation.' });
     }
 
-    const result = deleteCommentFromThread(entry.thread, mutation);
+    const result = deleteCommentFromThread(entry.thread, mutation, mutationOwner);
+    if (result.error) {
+      return json(403, { error: result.error });
+    }
+
     if (!result.didMutate) {
       return json(404, { error: 'Could not find a matching thread/comment for this mutation.' });
     }
@@ -508,11 +667,12 @@ const handlePost = async (event) => {
     }
 
     await setThreadKeysForPage(pageLocationId, nextThreadKeys);
+    await Promise.all(result.deletedCommentIds.map((commentId) => deleteReactionsForComment(commentId)));
     const { chapterThreads, lineThreadKeys } = await splitThreadKeysByLocation(nextThreadKeys);
     return json(200, {
       type: 'threads-updated',
       pageLocationId,
-      chapterThreads,
+      chapterThreads: sanitizeThreads(chapterThreads),
       lineThreadKeys,
     });
   }
