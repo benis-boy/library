@@ -74,18 +74,24 @@ const redisDelete = async (key) => {
   await redisCommand(['DEL', key]);
 };
 
+const redisIncrementBy = async (key, increment) => {
+  return redisCommand(['INCRBY', key, increment]);
+};
+
 const toPageLocationKey = (locationId) => `${locationId.bookId}:${locationId.chapterId}`;
 
 const toPageThreadKeysRedisKey = (locationId) => `${COMMENT_KEY_PREFIX}:page:${toPageLocationKey(locationId)}:thread-keys`;
 
 const toThreadLocationKey = (locationId) => {
-  const linePart = typeof locationId.lineNumber === 'number' ? locationId.lineNumber : 'chapter';
+  const linePart = locationId.paragraphLocation ? `paragraph:${locationId.paragraphLocation.paragraphIndex}` : 'chapter';
   return `${locationId.bookId}:${locationId.chapterId}:${linePart}`;
 };
 
 const toThreadRedisKey = (thread) => {
   return `${COMMENT_KEY_PREFIX}:thread:${toThreadLocationKey(thread.locationId)}:${thread.rootCommentId}`;
 };
+
+const toThreadCommentCountRedisKey = (threadKey) => `${threadKey}:comment-count`;
 
 const toCommentReactionsRedisKey = (commentId) => `${COMMENT_KEY_PREFIX}:comment:${commentId}:likes`;
 
@@ -168,8 +174,39 @@ const isPageLocationId = (value) => {
   );
 };
 
+const isParagraphLocation = (value) => {
+  return (
+    value &&
+    typeof value === 'object' &&
+    typeof value.bookId === 'string' &&
+    value.bookId.length > 0 &&
+    typeof value.chapterId === 'string' &&
+    value.chapterId.length > 0 &&
+    typeof value.paragraphIndex === 'number' &&
+    Number.isInteger(value.paragraphIndex) &&
+    value.paragraphIndex >= 0 &&
+    typeof value.secondaryKey === 'string' &&
+    value.secondaryKey.length > 0 &&
+    typeof value.tertiaryKey?.prev === 'string' &&
+    typeof value.tertiaryKey?.next === 'string'
+  );
+};
+
+const parseParagraphLocationQuery = (value) => {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(value);
+    return isParagraphLocation(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
 const isThreadLocationId = (value) => {
-  return isPageLocationId(value) && (value.lineNumber === undefined || typeof value.lineNumber === 'number');
+  return isPageLocationId(value) && (value.paragraphLocation === undefined || isParagraphLocation(value.paragraphLocation));
 };
 
 const isComment = (value) => {
@@ -308,6 +345,25 @@ const deleteThread = async (threadKey) => {
   await redisDelete(threadKey);
 };
 
+const countThreadComments = (thread) => Object.keys(thread.commentsById ?? {}).length;
+
+const getThreadCommentCount = async (threadKey) => {
+  const value = await redisGet(toThreadCommentCountRedisKey(threadKey));
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
+};
+
+const setThreadCommentCount = async (threadKey, count) => {
+  await redisSet(toThreadCommentCountRedisKey(threadKey), Math.max(0, count));
+};
+
+const incrementThreadCommentCount = async (threadKey, increment) => {
+  await redisIncrementBy(toThreadCommentCountRedisKey(threadKey), increment);
+};
+
+const deleteThreadCommentCount = async (threadKey) => {
+  await redisDelete(toThreadCommentCountRedisKey(threadKey));
+};
+
 const normalizeCommentReactions = (value) => {
   if (Array.isArray(value)) {
     const likedUserNames = value.filter((userName) => typeof userName === 'string');
@@ -372,32 +428,70 @@ const setUserReactionsForComment = (reactions, userName, emojis) => {
 
 const includesComment = (thread, commentId) => Boolean(thread.commentsById?.[commentId]);
 
-const isChapterThread = (thread) => thread.locationId?.lineNumber === undefined;
+const isChapterThread = (thread) => thread.locationId?.paragraphLocation === undefined;
 
 const splitThreadKeysByLocation = async (threadKeys) => {
-  const entries = await Promise.all(
+  const chapterThreads = [];
+  const lineThreadKeys = [];
+  const commentCountsByThreadKey = {};
+
+  await Promise.all(
     threadKeys.map(async (threadKey) => {
+      if (!threadKey.includes(':paragraph:')) {
+        const thread = await getThreadByKey(threadKey);
+        if (thread && isChapterThread(thread)) {
+          chapterThreads.push(thread);
+        }
+        return;
+      }
+
+      lineThreadKeys.push(threadKey);
+      const persistedCount = await getThreadCommentCount(threadKey);
+      if (persistedCount !== null) {
+        commentCountsByThreadKey[threadKey] = persistedCount;
+        return;
+      }
+
       const thread = await getThreadByKey(threadKey);
-      return thread ? { threadKey, thread } : null;
+      if (!thread) {
+        commentCountsByThreadKey[threadKey] = 0;
+        return;
+      }
+
+      const count = countThreadComments(thread);
+      commentCountsByThreadKey[threadKey] = count;
+      await setThreadCommentCount(threadKey, count);
     })
   );
 
-  const chapterThreads = [];
-  const lineThreadKeys = [];
+  return { chapterThreads, lineThreadKeys, commentCountsByThreadKey };
+};
 
-  for (const entry of entries) {
-    if (!entry) {
-      continue;
-    }
+const getThreadsForLocation = async (threadKeys, locationId) => {
+  const targetLocationKey = toThreadLocationKey(locationId);
+  const targetThreadKeys = threadKeys.filter((threadKey) => threadKey.includes(`:thread:${targetLocationKey}:`));
+  return getThreadsByKeys(targetThreadKeys);
+};
 
-    if (isChapterThread(entry.thread)) {
-      chapterThreads.push(entry.thread);
-    } else {
-      lineThreadKeys.push(entry.threadKey);
-    }
+const getThreadsUpdatedResponse = async (pageLocationId, threadKeys, locationId) => {
+  if (locationId?.paragraphLocation) {
+    return {
+      type: 'threads-updated',
+      pageLocationId,
+      chapterThreads: sanitizeThreads(await getThreadsForLocation(threadKeys, locationId)),
+      lineThreadKeys: [],
+      commentCountsByThreadKey: {},
+    };
   }
 
-  return { chapterThreads, lineThreadKeys };
+  const { chapterThreads, lineThreadKeys, commentCountsByThreadKey } = await splitThreadKeysByLocation(threadKeys);
+  return {
+    type: 'threads-updated',
+    pageLocationId,
+    chapterThreads: sanitizeThreads(chapterThreads),
+    lineThreadKeys,
+    commentCountsByThreadKey,
+  };
 };
 
 const findThreadEntryByCommentId = async (threadKeys, commentId) => {
@@ -551,12 +645,27 @@ const handleGet = async (event) => {
   }
 
   const threadKeys = await getThreadKeysForPage(pageLocationId);
-  const { chapterThreads, lineThreadKeys } = await splitThreadKeysByLocation(threadKeys);
+  const paragraphLocation = parseParagraphLocationQuery(query.paragraphLocation);
+  if (query.paragraphLocation && !paragraphLocation) {
+    return json(400, { error: 'Invalid paragraphLocation.' });
+  }
+
+  if (paragraphLocation) {
+    const threads = await getThreadsForLocation(threadKeys, { ...pageLocationId, paragraphLocation });
+
+    return json(200, {
+      pageLocationId,
+      threads: sanitizeThreads(threads),
+    });
+  }
+
+  const { chapterThreads, lineThreadKeys, commentCountsByThreadKey } = await splitThreadKeysByLocation(threadKeys);
 
   return json(200, {
     pageLocationId,
     chapterThreads: sanitizeThreads(chapterThreads),
     lineThreadKeys,
+    commentCountsByThreadKey,
   });
 };
 
@@ -610,16 +719,11 @@ const handlePost = async (event) => {
       commentsById: commentsWithOwner(mutation.commentsById, mutationOwner),
     };
     const threadKey = await setThread(nextThread);
+    await setThreadCommentCount(threadKey, countThreadComments(nextThread));
     await setThreadKeysForPage(pageLocationId, [...threadKeys.filter((existingThreadKey) => existingThreadKey !== threadKey), threadKey]);
 
     const nextThreadKeys = await getThreadKeysForPage(pageLocationId);
-    const { chapterThreads, lineThreadKeys } = await splitThreadKeysByLocation(nextThreadKeys);
-    return json(200, {
-      type: 'threads-updated',
-      pageLocationId,
-      chapterThreads: sanitizeThreads(chapterThreads),
-      lineThreadKeys,
-    });
+    return json(200, await getThreadsUpdatedResponse(pageLocationId, nextThreadKeys, mutation.locationId));
   }
 
   if (mutation.type === 'upsert-comment') {
@@ -634,13 +738,10 @@ const handlePost = async (event) => {
     }
 
     await setThread(result.thread);
-    const { chapterThreads, lineThreadKeys } = await splitThreadKeysByLocation(threadKeys);
-    return json(200, {
-      type: 'threads-updated',
-      pageLocationId,
-      chapterThreads: sanitizeThreads(chapterThreads),
-      lineThreadKeys,
-    });
+    if (!includesComment(entry.thread, mutation.commentId)) {
+      await incrementThreadCommentCount(entry.threadKey, 1);
+    }
+    return json(200, await getThreadsUpdatedResponse(pageLocationId, threadKeys, entry.thread.locationId));
   }
 
   if (mutation.type === 'delete-comment') {
@@ -661,20 +762,16 @@ const handlePost = async (event) => {
     const nextThreadKeys = threadKeys.filter((threadKey) => threadKey !== entry.threadKey);
     if (result.thread) {
       await setThread(result.thread);
+      await setThreadCommentCount(entry.threadKey, countThreadComments(result.thread));
       nextThreadKeys.push(entry.threadKey);
     } else {
       await deleteThread(entry.threadKey);
+      await deleteThreadCommentCount(entry.threadKey);
     }
 
     await setThreadKeysForPage(pageLocationId, nextThreadKeys);
     await Promise.all(result.deletedCommentIds.map((commentId) => deleteReactionsForComment(commentId)));
-    const { chapterThreads, lineThreadKeys } = await splitThreadKeysByLocation(nextThreadKeys);
-    return json(200, {
-      type: 'threads-updated',
-      pageLocationId,
-      chapterThreads: sanitizeThreads(chapterThreads),
-      lineThreadKeys,
-    });
+    return json(200, await getThreadsUpdatedResponse(pageLocationId, nextThreadKeys, entry.thread.locationId));
   }
 
   return json(400, { error: 'Unsupported mutation type.' });

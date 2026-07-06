@@ -1,4 +1,4 @@
-import { CommentId, CommentReactions, PageLocationId, Thread, ThreadMutation } from './dataModel';
+import { CommentId, CommentReactions, PageLocationId, Thread, ThreadLocationId, ThreadMutation } from './dataModel';
 
 export type CommentsMutationResponse =
   | {
@@ -6,6 +6,7 @@ export type CommentsMutationResponse =
       pageLocationId: PageLocationId;
       chapterThreads: Thread[];
       lineThreadKeys: string[];
+      commentCountsByThreadKey?: Record<string, number>;
       threads: Thread[];
     }
   | {
@@ -22,6 +23,12 @@ export type FetchPageThreadsResponse = {
   pageLocationId: PageLocationId;
   chapterThreads: Thread[];
   lineThreadKeys: string[];
+  commentCountsByThreadKey?: Record<string, number>;
+  threads: Thread[];
+};
+
+export type FetchThreadLocationThreadsResponse = {
+  pageLocationId: PageLocationId;
   threads: Thread[];
 };
 
@@ -90,6 +97,36 @@ export const fetchThreadsForPage = async (pageLocationId: PageLocationId) => {
     ...data,
     threads: data.chapterThreads,
   };
+};
+
+export const fetchPageCommentSummary = async (pageLocationId: PageLocationId) => {
+  const searchParams = new URLSearchParams({
+    bookId: pageLocationId.bookId,
+    chapterId: pageLocationId.chapterId,
+  });
+
+  const response = await fetch(`${COMMENTS_FUNCTION_URL}?${searchParams.toString()}`);
+  const data = await parseJsonResponse<RawFetchPageThreadsResponse>(response);
+  return {
+    pageLocationId: data.pageLocationId,
+    lineThreadKeys: data.lineThreadKeys,
+    commentCountsByThreadKey: data.commentCountsByThreadKey ?? {},
+  };
+};
+
+export const fetchThreadsForLocation = async (locationId: ThreadLocationId): Promise<FetchThreadLocationThreadsResponse> => {
+  const searchParams = new URLSearchParams({
+    bookId: locationId.bookId,
+    chapterId: locationId.chapterId,
+  });
+
+  if (locationId.paragraphLocation) {
+    searchParams.set('paragraphLocation', JSON.stringify(locationId.paragraphLocation));
+  }
+
+  const response = await fetch(`${COMMENTS_FUNCTION_URL}?${searchParams.toString()}`);
+  const data = await parseJsonResponse<FetchThreadLocationThreadsResponse>(response);
+  return data;
 };
 
 export const fetchCommentReactions = async (commentIds: CommentId[]): Promise<CommentReactionsForViewer> => {

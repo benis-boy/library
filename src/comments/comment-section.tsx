@@ -4,7 +4,7 @@ import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { ConfigurationContext } from '../context/ConfigurationContext';
 import { PatreonContext } from '../context/PatreonContext';
 import { Thread as ThreadView } from './comments';
-import { fetchCommentReactions, fetchThreadsForPage, sendThreadMutation } from './comments-api';
+import { fetchCommentReactions, fetchThreadsForLocation, fetchThreadsForPage, sendThreadMutation } from './comments-api';
 import {
   Comment,
   CommentId,
@@ -55,7 +55,7 @@ const getThreadCommentIds = (threads: Thread[]) => {
 };
 
 const normalizePageLocation = (locationId: PageLocationId | ThreadLocationId): PageLocationId => {
-  if ('lineNumber' in locationId) {
+  if ('paragraphLocation' in locationId) {
     return toPageLocationId(locationId);
   }
 
@@ -80,12 +80,13 @@ const COMMENT_LOAD_CACHE_MS = 1000;
 const REACTION_MUTATION_DEBOUNCE_MS = 5000;
 const COMMENT_LIMIT_WARNING_THRESHOLD = 0.9;
 
-const getCommentLoadCacheKey = (pageLocationId: PageLocationId, signedInUserName: string | null) => {
-  return `${pageLocationId.bookId}:${pageLocationId.chapterId}:${signedInUserName ?? 'anonymous'}`;
+const getLocationLoadCacheKey = (locationId: PageLocationId | ThreadLocationId, signedInUserName: string | null) => {
+  const paragraphPart = 'paragraphLocation' in locationId && locationId.paragraphLocation ? JSON.stringify(locationId.paragraphLocation) : 'chapter';
+  return `${locationId.bookId}:${locationId.chapterId}:${paragraphPart}:${signedInUserName ?? 'anonymous'}`;
 };
 
-const loadCommentsForPage = (pageLocationId: PageLocationId, signedInUserName: string | null) => {
-  const cacheKey = getCommentLoadCacheKey(pageLocationId, signedInUserName);
+const loadCommentsForLocation = (locationId: PageLocationId | ThreadLocationId, signedInUserName: string | null) => {
+  const cacheKey = getLocationLoadCacheKey(locationId, signedInUserName);
   const cached = commentLoadCache.get(cacheKey);
   const now = Date.now();
   if (cached && now - cached.cachedAt < COMMENT_LOAD_CACHE_MS) {
@@ -93,7 +94,9 @@ const loadCommentsForPage = (pageLocationId: PageLocationId, signedInUserName: s
   }
 
   const promise = (async (): Promise<LoadedComments> => {
-    const threadsResponse = await fetchThreadsForPage(pageLocationId);
+    const threadsResponse = 'paragraphLocation' in locationId && locationId.paragraphLocation
+      ? await fetchThreadsForLocation(locationId)
+      : await fetchThreadsForPage(locationId);
     const commentIds = getThreadCommentIds(threadsResponse.threads);
     if (commentIds.length === 0) {
       return {
@@ -380,6 +383,7 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
   const patreonContext = useContext(PatreonContext);
   const { isDarkMode } = useContext(ConfigurationContext);
   const pageLocationId = useMemo(() => normalizePageLocation(locationId), [locationId]);
+  const locationLoadKey = useMemo(() => getLocationLoadCacheKey(locationId, null), [locationId]);
   const signedInUserName = isLocalLibraryUrl()
     ? 'B. Warnecke'
     : patreonContext?.isLoggedIn
@@ -422,7 +426,7 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
       setError(null);
 
       try {
-        const loadedComments = await loadCommentsForPage(pageLocationId, signedInUserName);
+        const loadedComments = await loadCommentsForLocation(locationId, signedInUserName);
         if (cancelled) {
           return;
         }
@@ -451,7 +455,7 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
     return () => {
       cancelled = true;
     };
-  }, [pageLocationId, signedInUserName]);
+  }, [locationId, locationLoadKey, signedInUserName]);
 
   useEffect(() => {
     const flushBeforePageLeaves = () => {
@@ -510,7 +514,7 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
       const response = await sendThreadMutation(pageLocationId, {
         type: 'start-thread',
         mutationOwner,
-        locationId: pageLocationId,
+        locationId,
         rootCommentId: commentId,
         commentsById: {
           [commentId]: rootComment,
@@ -774,7 +778,7 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
     <section className={`mx-auto w-full max-w-3xl ${className ?? ''}`}>
       <header className="flex items-center justify-between gap-1">
         <h2 className={`text-xl font-bold ${isDarkMode ? 'text-slate-100' : 'text-slate-950'}`}>
-          {commentCount} Comment{commentCount === 1 ? '' : 's'}
+          {isLoading ? '... Comments' : `${commentCount} Comment${commentCount === 1 ? '' : 's'}`}
         </h2>
         {isLoading ? (
           <span className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Loading...</span>

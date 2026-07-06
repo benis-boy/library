@@ -2,8 +2,11 @@ import { Fragment, useContext, useEffect, useMemo, useRef, useState } from 'reac
 import { useNavigate, useParams } from 'react-router-dom';
 import { getGalleryManifestPath } from '../cacheVersioning';
 import { CommentSection } from '../comments/comment-section';
-import { PageLocationId } from '../comments/dataModel';
+import { fetchPageCommentSummary } from '../comments/comments-api';
+import { PageLocationId, ThreadLocationId } from '../comments/dataModel';
+import { createParagraphLocation, type Paragraph } from '../comments/paragraph-comments/paragraph-locator';
 import { ConfigurationContext } from '../context/ConfigurationContext';
+import dataViewerIframeScript from './data-viewer-iframe-script.js?raw';
 import AccessRestrictedMessage from './notLoggedIn';
 import PatreonMessage from './notASupporter';
 import { ImageLightbox } from './gallery/ImageLightbox';
@@ -26,6 +29,8 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [galleryMap, setGalleryMap] = useState<Record<string, { fullSrc: string }>>({});
   const [lightboxImageId, setLightboxImageId] = useState<string | null>(null);
+  const [paragraphCommentLocation, setParagraphCommentLocation] = useState<ThreadLocationId | null>(null);
+  const [paragraphCommentCounts, setParagraphCommentCounts] = useState<Record<number, number>>({});
   const {
     libraryData: { content, selectedBook, selectedChapter, accessDeniedReason } = {
       content: '',
@@ -57,11 +62,14 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
 
       if (!routeInfo) {
         const activeChapter =
-          (selectedBook === routeBook ? normalizeChapterReference(selectedChapter) : undefined) || getStoredSelectedChapter(routeBook);
+          (selectedBook === routeBook ? normalizeChapterReference(selectedChapter) : undefined) ||
+          getStoredSelectedChapter(routeBook);
 
         if (activeChapter) {
           const currentPath = window.location.hash.replace(/^#/, '') || '/';
-          const targetPath = await getReaderRouteForChapter(routeBook, activeChapter).catch(() => getReaderRoute(routeBook, activeChapter));
+          const targetPath = await getReaderRouteForChapter(routeBook, activeChapter).catch(() =>
+            getReaderRoute(routeBook, activeChapter)
+          );
           if (!cancelled && currentPath !== targetPath) {
             navigate(targetPath, { replace: true });
           }
@@ -112,7 +120,17 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
     return () => {
       cancelled = true;
     };
-  }, [accessDeniedReason, content, navigate, params.bookId, params.chapter, selectedBook, selectedChapter, setSelectedBook, setSelectedChapter]);
+  }, [
+    accessDeniedReason,
+    content,
+    navigate,
+    params.bookId,
+    params.chapter,
+    selectedBook,
+    selectedChapter,
+    setSelectedBook,
+    setSelectedChapter,
+  ]);
 
   useEffect(() => {
     const adjustHeight = () => {
@@ -201,6 +219,68 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
   }, [baseUrl]);
 
   useEffect(() => {
+    const routeInfo = parseReaderRoute(params.bookId, params.chapter);
+    const pageLocationId = routeInfo
+      ? { bookId: routeInfo.book, chapterId: routeInfo.chapter }
+      : selectedChapter
+        ? { bookId: selectedBook, chapterId: selectedChapter }
+        : null;
+    let cancelled = false;
+
+    const loadParagraphCommentCounts = async () => {
+      if (!pageLocationId || accessDeniedReason) {
+        setParagraphCommentCounts({});
+        return;
+      }
+
+      try {
+        const summary = await fetchPageCommentSummary(pageLocationId);
+        if (cancelled) {
+          return;
+        }
+
+        const countsByParagraphIndex: Record<number, number> = {};
+        for (const threadKey of summary.lineThreadKeys) {
+          const match = threadKey.match(/:paragraph:(\d+):[^:]+$/);
+          if (!match) {
+            continue;
+          }
+
+          const paragraphIndex = Number(match[1]);
+          if (!Number.isInteger(paragraphIndex)) {
+            continue;
+          }
+
+          countsByParagraphIndex[paragraphIndex] =
+            (countsByParagraphIndex[paragraphIndex] ?? 0) + (summary.commentCountsByThreadKey[threadKey] ?? 0);
+        }
+
+        setParagraphCommentCounts(countsByParagraphIndex);
+      } catch {
+        if (!cancelled) {
+          setParagraphCommentCounts({});
+        }
+      }
+    };
+
+    void loadParagraphCommentCounts();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [accessDeniedReason, params.bookId, params.chapter, selectedBook, selectedChapter]);
+
+  useEffect(() => {
+    iframeRef.current?.contentWindow?.postMessage(
+      {
+        type: 'paragraph-comment-counts-updated',
+        countsByParagraphIndex: paragraphCommentCounts,
+      },
+      '*'
+    );
+  }, [content, paragraphCommentCounts]);
+
+  useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       const isTrustedOrigin =
         event.origin.startsWith('https://benis-boy.github.io') ||
@@ -210,23 +290,43 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
         return;
       }
 
-      if (event.data?.type !== 'chapter-image-clicked') {
+      if (event.data?.type === 'chapter-image-clicked') {
+        const imageId = event.data?.imageId;
+        if (typeof imageId !== 'string' || !galleryMap[imageId]) {
+          return;
+        }
+
+        setLightboxImageId(imageId);
         return;
       }
 
-      const imageId = event.data?.imageId;
-      if (typeof imageId !== 'string' || !galleryMap[imageId]) {
-        return;
-      }
+      if (event.data?.type === 'paragraph-comment-requested') {
+        const paragraphIndex = event.data?.paragraphIndex;
+        const routeInfo = parseReaderRoute(params.bookId, params.chapter);
+        const bookId = routeInfo?.book || selectedBook;
+        const chapterId = routeInfo?.chapter || selectedChapter;
+        if (typeof paragraphIndex !== 'number' || !bookId || !chapterId || !iframeRef.current?.contentDocument) {
+          return;
+        }
 
-      setLightboxImageId(imageId);
+        const paragraphs: Paragraph[] = Array.from(
+          iframeRef.current.contentDocument.querySelectorAll('p[data-paragraph-index]')
+        ).map((paragraph) => ({ content: paragraph.textContent?.trim() ?? '' }));
+        if (paragraphIndex < 0 || paragraphIndex >= paragraphs.length) {
+          return;
+        }
+
+        const paragraphLocation = createParagraphLocation(bookId, chapterId, paragraphs, paragraphIndex);
+        console.log('ParagraphLocation', paragraphLocation);
+        setParagraphCommentLocation({ bookId, chapterId, paragraphLocation });
+      }
     };
 
     window.addEventListener('message', handleMessage);
     return () => {
       window.removeEventListener('message', handleMessage);
     };
-  }, [galleryMap]);
+  }, [galleryMap, params.bookId, params.chapter, selectedBook, selectedChapter]);
 
   const selectedLightboxImageSrc = useMemo(() => {
     if (!lightboxImageId) {
@@ -260,7 +360,16 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
     <div className="w-full flex">
       <iframe
         ref={iframeRef}
-        onLoad={() => injectStyles(iframeRef, { isDarkMode, selectedFont, fontSize })}
+        onLoad={() => {
+          injectStyles(iframeRef, { isDarkMode, selectedFont, fontSize });
+          iframeRef.current?.contentWindow?.postMessage(
+            {
+              type: 'paragraph-comment-counts-updated',
+              countsByParagraphIndex: paragraphCommentCounts,
+            },
+            '*'
+          );
+        }}
         srcDoc={`<html><body style="margin: 0;margin-top: -16px;margin-bottom: -16px;"><div style="height:100%">${content}</div></html></body>`}
         className="flex-grow"
         title="Embedded Content"
@@ -321,6 +430,29 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
         imageAlt={lightboxImageId ? `Chapter image ${lightboxImageId}` : 'Chapter image'}
         onClose={() => setLightboxImageId(null)}
       />
+
+      {paragraphCommentLocation ? (
+        <div className="fixed inset-0 z-[2100] flex items-center justify-center bg-slate-950/60 px-3 py-6" onClick={() => setParagraphCommentLocation(null)}>
+          <div
+            className={`max-h-full w-full max-w-3xl overflow-y-auto rounded-2xl p-5 shadow-2xl ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <h2 className={`text-lg font-bold ${isDarkMode ? 'text-slate-100' : 'text-slate-950'}`}>Paragraph Comments</h2>
+              <button
+                type="button"
+                className={`rounded-full px-3 py-1 text-sm font-semibold ${
+                  isDarkMode ? 'bg-slate-800 text-slate-100 hover:bg-slate-700' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+                onClick={() => setParagraphCommentLocation(null)}
+              >
+                Close
+              </button>
+            </div>
+            <CommentSection locationId={paragraphCommentLocation} />
+          </div>
+        </div>
+      ) : null}
     </>
   );
 };
@@ -350,12 +482,93 @@ const injectStyles = (
         }
 
         p {
+          position: relative;
           color: ${isDarkMode ? '#ddd' : 'black'};
           font-family: ${selectedFont};
           font-size: ${fontSize}px;
           line-height: 1.6;
           text-align: justify;
           padding: 0.5em 10px;
+        }
+
+        p.paragraph-comment-target {
+          border-radius: 10px;
+          background: ${isDarkMode ? 'rgba(148, 163, 184, 0.12)' : 'rgba(241, 245, 249, 0.92)'};
+          box-shadow: inset 0 0 0 1px ${isDarkMode ? 'rgba(148, 163, 184, 0.28)' : 'rgba(148, 163, 184, 0.45)'};
+        }
+
+        .paragraph-comment-count {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-width: 1.6em;
+          height: 1.35em;
+          margin-left: 0.45em;
+          padding: 0 0.45em;
+          border-radius: 999px;
+          background: ${isDarkMode ? '#334155' : '#e2e8f0'};
+          color: ${isDarkMode ? '#e2e8f0' : '#334155'};
+          font-family: ${selectedFont};
+          font-size: ${Math.max(11, fontSize - 5)}px;
+          font-style: normal;
+          font-weight: 700;
+          line-height: 1;
+          vertical-align: 0.12em;
+        }
+
+        .paragraph-comment-button-hit-area {
+          position: absolute;
+          z-index: 10;
+          display: none;
+          align-items: center;
+          justify-content: center;
+          width: min(260px, calc(100% - 16px));
+          height: 58px;
+        }
+
+        .paragraph-comment-button-hit-area.is-visible {
+          display: flex;
+        }
+
+        .paragraph-comment-button {
+          position: relative;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          height: 34px;
+          padding: 0 14px;
+          border: 1px solid ${isDarkMode ? '#64748b' : '#94a3b8'};
+          border-radius: 999px;
+          background: ${isDarkMode ? '#1e293b' : '#ffffff'};
+          color: ${isDarkMode ? '#e2e8f0' : '#334155'};
+          font-family: ${selectedFont};
+          font-size: 13px;
+          font-weight: 700;
+          line-height: 1;
+          box-shadow: 0 8px 18px rgba(15, 23, 42, 0.22);
+          cursor: pointer;
+        }
+
+        .paragraph-comment-button::after {
+          content: '';
+          position: absolute;
+          left: 50%;
+          bottom: -6px;
+          width: 10px;
+          height: 10px;
+          border-right: 1px solid ${isDarkMode ? '#64748b' : '#94a3b8'};
+          border-bottom: 1px solid ${isDarkMode ? '#64748b' : '#94a3b8'};
+          background: ${isDarkMode ? '#1e293b' : '#ffffff'};
+          transform: translateX(-50%) rotate(45deg);
+        }
+
+        .paragraph-comment-button:hover {
+          background: ${isDarkMode ? '#334155' : '#f8fafc'};
+        }
+
+        .paragraph-comment-button:focus {
+          outline: 2px solid ${isDarkMode ? '#93c5fd' : '#1d4ed8'};
+          outline-offset: 2px;
         }
 
         .chapter-image-trigger {
@@ -399,27 +612,7 @@ const injectStyles = (
       iframeDocument.head.appendChild(styleElement); // Append styles to the head of the iframe's document
 
       const scriptElement = iframeDocument.createElement('script');
-      scriptElement.innerHTML = `
-        document.addEventListener('click', function(event) {
-          const target = event.target;
-          if (!(target instanceof Element)) {
-            return;
-          }
-
-          const trigger = target.closest('.chapter-image-trigger');
-          if (!trigger) {
-            return;
-          }
-
-          event.preventDefault();
-          const imageId = trigger.getAttribute('data-image-id');
-          if (!imageId) {
-            return;
-          }
-
-          window.parent.postMessage({ type: 'chapter-image-clicked', imageId: imageId }, '*');
-        });
-      `;
+      scriptElement.textContent = dataViewerIframeScript;
       iframeDocument.head.appendChild(scriptElement);
     }
   }

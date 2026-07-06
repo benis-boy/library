@@ -1,19 +1,21 @@
 import { SourceType } from '../constants';
+import { ParagraphLocation } from './paragraph-comments/paragraph-locator';
 
 export type TimestampMs = number;
 export type ChapterId = string;
 export type CommentId = string;
 
-export type ThreadLocationId = {
+export type PageLocationId = {
   bookId: SourceType;
   chapterId: ChapterId;
-  lineNumber?: number;
 };
 
-export type PageLocationId = Pick<ThreadLocationId, 'bookId' | 'chapterId'>;
+export type ThreadLocationId = PageLocationId & {
+  paragraphLocation?: ParagraphLocation;
+};
 
 export const CHAPTER_COMMENT_LINE_TOKEN = 'chapter' as const;
-export type ThreadLocationKey = `${SourceType}:${ChapterId}:${number | typeof CHAPTER_COMMENT_LINE_TOKEN}`;
+export type ThreadLocationKey = `${SourceType}:${ChapterId}:${string}`;
 export type PageLocationKey = `${SourceType}:${ChapterId}`;
 
 export type Comment = {
@@ -83,7 +85,7 @@ export const getCommentUserName = (userName: string | null) => {
 };
 
 export const isChapterCommentThread = (locationId: ThreadLocationId) => {
-  return locationId.lineNumber === undefined;
+  return locationId.paragraphLocation === undefined;
 };
 
 export const toPageLocationId = (locationId: ThreadLocationId): PageLocationId => {
@@ -98,7 +100,7 @@ export const toPageLocationKey = (locationId: PageLocationId): PageLocationKey =
 };
 
 export const toThreadLocationKey = (locationId: ThreadLocationId): ThreadLocationKey => {
-  const linePart = typeof locationId.lineNumber === 'number' ? locationId.lineNumber : CHAPTER_COMMENT_LINE_TOKEN;
+  const linePart = locationId.paragraphLocation ? `paragraph:${locationId.paragraphLocation.paragraphIndex}` : CHAPTER_COMMENT_LINE_TOKEN;
 
   return `${locationId.bookId}:${locationId.chapterId}:${linePart}`;
 };

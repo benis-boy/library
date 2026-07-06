@@ -88,7 +88,16 @@ const buildExampleThread = (): ThreadModel => {
     locationId: {
       bookId: 'PSSJ',
       chapterId: '41b0db3f',
-      lineNumber: 84,
+      paragraphLocation: {
+        bookId: 'PSSJ',
+        chapterId: '41b0db3f',
+        paragraphIndex: 84,
+        secondaryKey: 'DEADBEEF',
+        tertiaryKey: {
+          prev: 'PREV0001',
+          next: 'NEXT0001',
+        },
+      },
     },
     rootCommentId: 'root',
     commentsById: {
