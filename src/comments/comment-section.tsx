@@ -1,6 +1,6 @@
 import { Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle } from '@mui/material';
 import EmojiPicker, { Theme } from 'emoji-picker-react';
-import { useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { ReactNode, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { ConfigurationContext } from '../context/ConfigurationContext';
 import { PatreonContext } from '../context/PatreonContext';
 import { Thread as ThreadView } from './comments';
@@ -35,6 +35,9 @@ type CommentInputProps = {
 export type CommentSectionProps = {
   locationId: PageLocationId | ThreadLocationId;
   className?: string;
+  header?: ReactNode;
+  hideDefaultHeader?: boolean;
+  onCommentCountChange?: (commentCount: number) => void;
 };
 
 const isLocalLibraryUrl = () => {
@@ -379,7 +382,7 @@ const CommentInput = ({
   );
 };
 
-export const CommentSection = ({ locationId, className }: CommentSectionProps) => {
+export const CommentSection = ({ locationId, className, header, hideDefaultHeader = false, onCommentCountChange }: CommentSectionProps) => {
   const patreonContext = useContext(PatreonContext);
   const { isDarkMode } = useContext(ConfigurationContext);
   const pageLocationId = useMemo(() => normalizePageLocation(locationId), [locationId]);
@@ -477,6 +480,10 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
   }, []);
 
   const commentCount = useMemo(() => countThreadComments(threads), [threads]);
+
+  useEffect(() => {
+    onCommentCountChange?.(commentCount);
+  }, [commentCount, onCommentCountChange]);
 
   const applyThreadsResponse = (nextThreads: Thread[]) => {
     setThreads(nextThreads);
@@ -776,16 +783,19 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
 
   return (
     <section className={`mx-auto w-full max-w-3xl ${className ?? ''}`}>
-      <header className="flex items-center justify-between gap-1">
-        <h2 className={`text-xl font-bold ${isDarkMode ? 'text-slate-100' : 'text-slate-950'}`}>
-          {isLoading ? '... Comments' : `${commentCount} Comment${commentCount === 1 ? '' : 's'}`}
-        </h2>
-        {isLoading ? (
-          <span className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Loading...</span>
-        ) : null}
-      </header>
+      {header ??
+        (!hideDefaultHeader ? (
+          <header className="flex items-center justify-between gap-1">
+            <h2 className={`text-xl font-bold ${isDarkMode ? 'text-slate-100' : 'text-slate-950'}`}>
+              {isLoading ? '... Comments' : `${commentCount} Comment${commentCount === 1 ? '' : 's'}`}
+            </h2>
+            {isLoading ? (
+              <span className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Loading...</span>
+            ) : null}
+          </header>
+        ) : null)}
 
-      <div className="py-3">
+      <div className={hideDefaultHeader && !header ? 'pb-3' : 'py-3'}>
         <CommentInput disabled={isSubmitting} forceAnonymous={forceAnonymous} onSubmit={handleStartThread} />
       </div>
 
@@ -862,6 +872,9 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
         open={pendingDeleteCommentId !== null}
         onClose={() => setPendingDeleteCommentId(null)}
         slotProps={{
+          root: {
+            sx: { zIndex: 2300 },
+          },
           paper: {
             sx: isDarkMode
               ? {

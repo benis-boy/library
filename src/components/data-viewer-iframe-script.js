@@ -91,9 +91,21 @@ function renderParagraphCommentCounts(countsByParagraphIndex) {
     const marker = document.createElement('i');
     marker.className = 'paragraph-comment-count';
     marker.textContent = String(count);
+    marker.tabIndex = 0;
+    marker.setAttribute('role', 'button');
+    marker.setAttribute('data-paragraph-comment-index', paragraphIndex);
     marker.setAttribute('aria-label', count === 1 ? '1 paragraph comment' : count + ' paragraph comments');
     paragraph.appendChild(marker);
   }
+}
+
+function requestParagraphComments(paragraphIndex) {
+  const numericParagraphIndex = Number(paragraphIndex);
+  if (!Number.isFinite(numericParagraphIndex)) {
+    return;
+  }
+
+  window.parent.postMessage({ type: 'paragraph-comment-requested', paragraphIndex: numericParagraphIndex }, '*');
 }
 
 window.addEventListener('message', function (event) {
@@ -172,16 +184,19 @@ paragraphCommentButton.addEventListener('click', function (event) {
   }
 
   const paragraphIndex = Number(activeParagraph.getAttribute('data-paragraph-index'));
-  if (!Number.isFinite(paragraphIndex)) {
-    return;
-  }
-
-  window.parent.postMessage({ type: 'paragraph-comment-requested', paragraphIndex: paragraphIndex }, '*');
+  requestParagraphComments(paragraphIndex);
 });
 
 document.addEventListener('click', function (event) {
   const target = event.target;
   if (!(target instanceof Element)) {
+    return;
+  }
+
+  const paragraphCommentCount = target.closest('.paragraph-comment-count');
+  if (paragraphCommentCount) {
+    event.preventDefault();
+    requestParagraphComments(paragraphCommentCount.getAttribute('data-paragraph-comment-index'));
     return;
   }
 
@@ -197,4 +212,23 @@ document.addEventListener('click', function (event) {
   }
 
   window.parent.postMessage({ type: 'chapter-image-clicked', imageId: imageId }, '*');
+});
+
+document.addEventListener('keydown', function (event) {
+  if (event.key !== 'Enter' && event.key !== ' ') {
+    return;
+  }
+
+  const target = event.target;
+  if (!(target instanceof Element)) {
+    return;
+  }
+
+  const paragraphCommentCount = target.closest('.paragraph-comment-count');
+  if (!paragraphCommentCount) {
+    return;
+  }
+
+  event.preventDefault();
+  requestParagraphComments(paragraphCommentCount.getAttribute('data-paragraph-comment-index'));
 });

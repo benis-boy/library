@@ -1,4 +1,4 @@
-import { Fragment, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { getGalleryManifestPath } from '../cacheVersioning';
 import { CommentSection } from '../comments/comment-section';
@@ -31,6 +31,7 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
   const [lightboxImageId, setLightboxImageId] = useState<string | null>(null);
   const [paragraphCommentLocation, setParagraphCommentLocation] = useState<ThreadLocationId | null>(null);
   const [paragraphCommentCounts, setParagraphCommentCounts] = useState<Record<number, number>>({});
+  const [activeParagraphCommentCount, setActiveParagraphCommentCount] = useState(0);
   const {
     libraryData: { content, selectedBook, selectedChapter, accessDeniedReason } = {
       content: '',
@@ -318,6 +319,7 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
 
         const paragraphLocation = createParagraphLocation(bookId, chapterId, paragraphs, paragraphIndex);
         console.log('ParagraphLocation', paragraphLocation);
+        setActiveParagraphCommentCount(paragraphCommentCounts[paragraphIndex] ?? 0);
         setParagraphCommentLocation({ bookId, chapterId, paragraphLocation });
       }
     };
@@ -326,7 +328,7 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
     return () => {
       window.removeEventListener('message', handleMessage);
     };
-  }, [galleryMap, params.bookId, params.chapter, selectedBook, selectedChapter]);
+  }, [galleryMap, paragraphCommentCounts, params.bookId, params.chapter, selectedBook, selectedChapter]);
 
   const selectedLightboxImageSrc = useMemo(() => {
     if (!lightboxImageId) {
@@ -340,6 +342,35 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
 
     return `${baseUrl}${image.fullSrc.replace(/^\/+/, '')}`;
   }, [baseUrl, galleryMap, lightboxImageId]);
+
+  const handleParagraphModalCommentCountChange = useCallback(
+    (commentCount: number) => {
+      setActiveParagraphCommentCount(commentCount);
+
+      const paragraphIndex = paragraphCommentLocation?.paragraphLocation?.paragraphIndex;
+      if (paragraphIndex === undefined) {
+        return;
+      }
+
+      setParagraphCommentCounts((previousCounts) => {
+        if ((previousCounts[paragraphIndex] ?? 0) === commentCount) {
+          return previousCounts;
+        }
+
+        if (commentCount <= 0) {
+          const nextCounts = { ...previousCounts };
+          delete nextCounts[paragraphIndex];
+          return nextCounts;
+        }
+
+        return {
+          ...previousCounts,
+          [paragraphIndex]: commentCount,
+        };
+      });
+    },
+    [paragraphCommentLocation]
+  );
 
   if (!lContext) return <Fragment />;
 
@@ -437,8 +468,10 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
             className={`max-h-full w-full max-w-3xl overflow-y-auto rounded-2xl p-5 shadow-2xl ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <h2 className={`text-lg font-bold ${isDarkMode ? 'text-slate-100' : 'text-slate-950'}`}>Paragraph Comments</h2>
+            <div className="mb-1 flex items-center justify-between gap-3">
+              <h2 className={`text-lg font-bold ${isDarkMode ? 'text-slate-100' : 'text-slate-950'}`}>
+                {activeParagraphCommentCount} Paragraph Comment{activeParagraphCommentCount === 1 ? '' : 's'}
+              </h2>
               <button
                 type="button"
                 className={`rounded-full px-3 py-1 text-sm font-semibold ${
@@ -449,7 +482,11 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
                 Close
               </button>
             </div>
-            <CommentSection locationId={paragraphCommentLocation} />
+            <CommentSection
+              locationId={paragraphCommentLocation}
+              hideDefaultHeader
+              onCommentCountChange={handleParagraphModalCommentCountChange}
+            />
           </div>
         </div>
       ) : null}
@@ -514,6 +551,16 @@ const injectStyles = (
           font-weight: 700;
           line-height: 1;
           vertical-align: 0.12em;
+          cursor: pointer;
+        }
+
+        .paragraph-comment-count:hover {
+          background: ${isDarkMode ? '#475569' : '#cbd5e1'};
+        }
+
+        .paragraph-comment-count:focus {
+          outline: 2px solid ${isDarkMode ? '#93c5fd' : '#1d4ed8'};
+          outline-offset: 2px;
         }
 
         .paragraph-comment-button-hit-area {
