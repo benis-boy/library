@@ -78,6 +78,8 @@ type LoadedComments = {
   reactionsByCommentId: Record<CommentId, CommentReactions>;
 };
 
+type FlushPendingReactions = (options?: { keepalive?: boolean }) => void;
+
 const commentLoadCache = new Map<string, { cachedAt: number; promise: Promise<LoadedComments> }>();
 const COMMENT_LOAD_CACHE_MS = 1000;
 const REACTION_MUTATION_DEBOUNCE_MS = 5000;
@@ -412,6 +414,7 @@ export const CommentSection = ({ locationId, className, header, hideDefaultHeade
   const reactionDebounceTimersRef = useRef(new Map<CommentId, number>());
   const signedInUserNameRef = useRef<string | null>(signedInUserName);
   const pageLocationIdRef = useRef(pageLocationId);
+  const flushPendingReactionsRef = useRef<FlushPendingReactions>(() => {});
 
   useEffect(() => {
     signedInUserNameRef.current = signedInUserName;
@@ -461,8 +464,14 @@ export const CommentSection = ({ locationId, className, header, hideDefaultHeade
   }, [locationId, locationLoadKey, signedInUserName]);
 
   useEffect(() => {
+    const reactionDebounceTimers = reactionDebounceTimersRef.current;
+
+    const flushReactions = (options?: { keepalive?: boolean }) => {
+      flushPendingReactionsRef.current(options);
+    };
+
     const flushBeforePageLeaves = () => {
-      flushPendingReactions({ keepalive: true });
+      flushReactions({ keepalive: true });
     };
 
     window.addEventListener('pagehide', flushBeforePageLeaves);
@@ -471,11 +480,11 @@ export const CommentSection = ({ locationId, className, header, hideDefaultHeade
     return () => {
       window.removeEventListener('pagehide', flushBeforePageLeaves);
       window.removeEventListener('beforeunload', flushBeforePageLeaves);
-      flushPendingReactions({ keepalive: true });
-      for (const timerId of reactionDebounceTimersRef.current.values()) {
+      flushReactions({ keepalive: true });
+      for (const timerId of reactionDebounceTimers.values()) {
         window.clearTimeout(timerId);
       }
-      reactionDebounceTimersRef.current.clear();
+      reactionDebounceTimers.clear();
     };
   }, []);
 
@@ -724,6 +733,8 @@ export const CommentSection = ({ locationId, className, header, hideDefaultHeade
       void flushPendingReaction(commentId, userName, options);
     }
   };
+
+  flushPendingReactionsRef.current = flushPendingReactions;
 
   const flushPendingReaction = async (commentId: CommentId, userName: string, options?: { keepalive?: boolean }) => {
     const pendingReactionEmojis = pendingReactionEmojisByCommentIdRef.current.get(commentId);
