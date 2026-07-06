@@ -57,15 +57,9 @@ export type ThreadMutation =
       wasReplyingTo: CommentId;
     }
   | {
-      type: 'add-reaction';
+      type: 'set-comment-reactions';
       commentId: CommentId;
-      emoji: string;
-      userName: string;
-    }
-  | {
-      type: 'remove-reaction';
-      commentId: CommentId;
-      emoji: string;
+      emojis: string[];
       userName: string;
     };
 

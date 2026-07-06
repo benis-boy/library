@@ -362,8 +362,8 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const syncedReactionsByCommentIdRef = useRef<Record<CommentId, CommentReactions>>({});
-  const pendingReactionStatesRef = useRef(new Map<string, { commentId: CommentId; emoji: string; shouldAdd: boolean }>());
-  const reactionDebounceTimersRef = useRef(new Map<string, number>());
+  const pendingReactionEmojisByCommentIdRef = useRef(new Map<CommentId, Set<string>>());
+  const reactionDebounceTimersRef = useRef(new Map<CommentId, number>());
   const signedInUserNameRef = useRef<string | null>(signedInUserName);
   const pageLocationIdRef = useRef(pageLocationId);
 
@@ -391,7 +391,7 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
         setThreads(loadedComments.threads);
         setReactionsByCommentId(loadedComments.reactionsByCommentId);
         syncedReactionsByCommentIdRef.current = loadedComments.reactionsByCommentId;
-        pendingReactionStatesRef.current.clear();
+        pendingReactionEmojisByCommentIdRef.current.clear();
         for (const timerId of reactionDebounceTimersRef.current.values()) {
           window.clearTimeout(timerId);
         }
@@ -603,8 +603,6 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
     };
   };
 
-  const getReactionMutationKey = (commentId: CommentId, emoji: string) => `${commentId}:${emoji}`;
-
   const handleToggleReaction = async ({ commentId, emoji, shouldAdd }: { commentId: CommentId; emoji: string; shouldAdd: boolean }) => {
     if (!signedInUserName) {
       return;
@@ -620,18 +618,27 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
       applyReactionState(previousReactionsByCommentId, commentId, emoji, signedInUserName, shouldAdd)
     );
 
-    const mutationKey = getReactionMutationKey(commentId, emoji);
-    pendingReactionStatesRef.current.set(mutationKey, { commentId, emoji, shouldAdd });
+    const currentReactionEmojis = new Set(
+      Object.entries(reactionsByCommentId?.[commentId] ?? {})
+        .filter(([, userNames]) => userNames.includes(signedInUserName))
+        .map(([reactionEmoji]) => reactionEmoji)
+    );
+    if (shouldAdd) {
+      currentReactionEmojis.add(emoji);
+    } else {
+      currentReactionEmojis.delete(emoji);
+    }
+    pendingReactionEmojisByCommentIdRef.current.set(commentId, currentReactionEmojis);
 
-    const existingTimer = reactionDebounceTimersRef.current.get(mutationKey);
+    const existingTimer = reactionDebounceTimersRef.current.get(commentId);
     if (existingTimer !== undefined) {
       window.clearTimeout(existingTimer);
     }
 
     const timerId = window.setTimeout(() => {
-      void flushPendingReaction(mutationKey, signedInUserName);
+      void flushPendingReaction(commentId, signedInUserName);
     }, REACTION_MUTATION_DEBOUNCE_MS);
-    reactionDebounceTimersRef.current.set(mutationKey, timerId);
+    reactionDebounceTimersRef.current.set(commentId, timerId);
   };
 
   const flushPendingReactions = (options?: { keepalive?: boolean }) => {
@@ -640,27 +647,31 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
       return;
     }
 
-    for (const mutationKey of pendingReactionStatesRef.current.keys()) {
-      void flushPendingReaction(mutationKey, userName, options);
+    for (const commentId of pendingReactionEmojisByCommentIdRef.current.keys()) {
+      void flushPendingReaction(commentId, userName, options);
     }
   };
 
-  const flushPendingReaction = async (mutationKey: string, userName: string, options?: { keepalive?: boolean }) => {
-    const pendingReaction = pendingReactionStatesRef.current.get(mutationKey);
-    if (pendingReaction === undefined) {
+  const flushPendingReaction = async (commentId: CommentId, userName: string, options?: { keepalive?: boolean }) => {
+    const pendingReactionEmojis = pendingReactionEmojisByCommentIdRef.current.get(commentId);
+    if (pendingReactionEmojis === undefined) {
       return;
     }
 
-    pendingReactionStatesRef.current.delete(mutationKey);
-    const timerId = reactionDebounceTimersRef.current.get(mutationKey);
+    pendingReactionEmojisByCommentIdRef.current.delete(commentId);
+    const timerId = reactionDebounceTimersRef.current.get(commentId);
     if (timerId !== undefined) {
       window.clearTimeout(timerId);
-      reactionDebounceTimersRef.current.delete(mutationKey);
+      reactionDebounceTimersRef.current.delete(commentId);
     }
 
-    const { commentId, emoji, shouldAdd } = pendingReaction;
-    const syncedReactionState = syncedReactionsByCommentIdRef.current?.[commentId]?.[emoji]?.includes(userName) ?? false;
-    if (shouldAdd === syncedReactionState) {
+    const syncedReactionEmojis = new Set(
+      Object.entries(syncedReactionsByCommentIdRef.current?.[commentId] ?? {})
+        .filter(([, userNames]) => userNames.includes(userName))
+        .map(([emoji]) => emoji)
+    );
+    const desiredEmojis = [...pendingReactionEmojis];
+    if (desiredEmojis.length === syncedReactionEmojis.size && desiredEmojis.every((emoji) => syncedReactionEmojis.has(emoji))) {
       return;
     }
 
@@ -668,9 +679,9 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
       const response = await sendThreadMutation(
         pageLocationIdRef.current,
         {
-          type: shouldAdd ? 'add-reaction' : 'remove-reaction',
+          type: 'set-comment-reactions',
           commentId,
-          emoji,
+          emojis: desiredEmojis,
           userName,
         },
         options

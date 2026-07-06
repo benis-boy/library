@@ -143,12 +143,11 @@ const isThreadMutation = (value) => {
       return typeof value.commentId === 'string' && isComment(value.comment) && typeof value.replyingTo === 'string';
     case 'delete-comment':
       return typeof value.commentId === 'string' && typeof value.wasReplyingTo === 'string';
-    case 'add-reaction':
-    case 'remove-reaction':
+    case 'set-comment-reactions':
       return (
         typeof value.commentId === 'string' &&
-        typeof value.emoji === 'string' &&
-        value.emoji.length > 0 &&
+        Array.isArray(value.emojis) &&
+        value.emojis.every((emoji) => typeof emoji === 'string' && emoji.length > 0) &&
         typeof value.userName === 'string' &&
         value.userName.length > 0
       );
@@ -218,6 +217,30 @@ const getReactionsForComment = async (commentId) => {
 
 const setReactionsForComment = async (commentId, reactions) => {
   await redisSet(toCommentReactionsRedisKey(commentId), normalizeCommentReactions(reactions));
+};
+
+const setUserReactionsForComment = (reactions, userName, emojis) => {
+  const desiredEmojis = new Set(emojis);
+  const nextReactions = {};
+
+  for (const [emoji, userNames] of Object.entries(reactions)) {
+    const nextUserNames = userNames.filter((reactionUserName) => reactionUserName !== userName);
+    if (desiredEmojis.has(emoji)) {
+      nextUserNames.push(userName);
+    }
+
+    if (nextUserNames.length > 0) {
+      nextReactions[emoji] = nextUserNames;
+    }
+  }
+
+  for (const emoji of desiredEmojis) {
+    if (!nextReactions[emoji]) {
+      nextReactions[emoji] = [userName];
+    }
+  }
+
+  return normalizeCommentReactions(nextReactions);
 };
 
 const includesComment = (thread, commentId) => Boolean(thread.commentsById?.[commentId]);
@@ -404,52 +427,15 @@ const handlePost = async (event) => {
 
   const { mutation } = request;
 
-  if (mutation.type === 'add-reaction') {
+  if (mutation.type === 'set-comment-reactions') {
     const reactions = await getReactionsForComment(mutation.commentId);
-    const userNames = reactions[mutation.emoji] ?? [];
-    if (userNames.includes(mutation.userName)) {
-      return json(200, {
-        type: 'comment-reactions-updated',
-        commentId: mutation.commentId,
-        reactions,
-      });
-    }
-
-    const nextReactions = {
-      ...reactions,
-      [mutation.emoji]: [...userNames, mutation.userName],
-    };
+    const nextReactions = setUserReactionsForComment(reactions, mutation.userName, mutation.emojis);
     await setReactionsForComment(mutation.commentId, nextReactions);
 
     return json(200, {
       type: 'comment-reactions-updated',
       commentId: mutation.commentId,
-      reactions: normalizeCommentReactions(nextReactions),
-    });
-  }
-
-  if (mutation.type === 'remove-reaction') {
-    const reactions = await getReactionsForComment(mutation.commentId);
-    const userNames = reactions[mutation.emoji] ?? [];
-    const nextUserNames = userNames.filter((userName) => userName !== mutation.userName);
-    if (userNames.length === nextUserNames.length) {
-      return json(200, {
-        type: 'comment-reactions-updated',
-        commentId: mutation.commentId,
-        reactions,
-      });
-    }
-
-    const nextReactions = {
-      ...reactions,
-      [mutation.emoji]: nextUserNames,
-    };
-    await setReactionsForComment(mutation.commentId, nextReactions);
-
-    return json(200, {
-      type: 'comment-reactions-updated',
-      commentId: mutation.commentId,
-      reactions: normalizeCommentReactions(nextReactions),
+      reactions: nextReactions,
     });
   }
 
