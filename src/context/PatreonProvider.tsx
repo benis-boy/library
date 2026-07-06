@@ -65,11 +65,7 @@ const restorePendingReaderRoute = (expectedNonce?: string | null) => {
 };
 
 export const PatreonProvider = ({ children }: { children: ReactNode }) => {
-  const [userInfo, setUserInfo] = useState<MembershipData | null>({
-    userName: 'test',
-    supportsMe: false,
-    currently_entitled_tiers: [],
-  });
+  const [userInfo, setUserInfo] = useState<MembershipData | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isAuthResolving, setIsAuthResolving] = useState(() => new URLSearchParams(window.location.search).has('code'));
   const [encryptionPassword, setEncryptionPassword] = useState('');

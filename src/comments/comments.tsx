@@ -9,16 +9,17 @@ import {
 import { ImageLightbox } from '../components/gallery/ImageLightbox';
 import { ConfigurationContext } from '../context/ConfigurationContext';
 import { ThreadGraphIssue, buildThreadGraph, getOrphanRootCommentIds } from './graph-utils';
-import heartEmptyUrl from './heart_empty.svg';
-import heartFilledUrl from './heart_filled.svg';
+
+export const COMMENT_REACTION_OPTIONS = ['❤️', '👍', '👎', '😂'] as const;
 
 type ReplyAction = {
   replyToCommentId: CommentId;
 };
 
-type ToggleLikeAction = {
+type ToggleReactionAction = {
   commentId: CommentId;
-  shouldLike: boolean;
+  emoji: string;
+  shouldAdd: boolean;
 };
 
 type CommentEditAction = {
@@ -30,15 +31,15 @@ type CommentSlotRender = (commentId: CommentId) => ReactNode;
 export type CommentProps = {
   commentId: CommentId;
   comment: CommentModel;
-  likeCount: number;
+  reactions: Record<string, string[]>;
+  viewerReactionEmojis?: ReadonlySet<string>;
   highlighted?: boolean;
   isDisconnected?: boolean;
-  likedByViewer?: boolean;
   actionsDisabled?: boolean;
   formatTimestamp?: (timestamp: TimestampMs) => string;
   resolveUserName?: (userName: string | null) => string;
   onReply?: (action: ReplyAction) => void;
-  onToggleLike?: (action: ToggleLikeAction) => void;
+  onToggleReaction?: (action: ToggleReactionAction) => void;
   onEdit?: (action: CommentEditAction) => void;
   onDelete?: (action: CommentEditAction) => void;
   onImageClick?: (imageSrc: string, imageAlt: string) => void;
@@ -98,15 +99,15 @@ const toDateTimeAttribute = (timestamp: TimestampMs) => {
 export const Comment = ({
   commentId,
   comment,
-  likeCount,
+  reactions,
+  viewerReactionEmojis,
   highlighted = false,
   isDisconnected = false,
-  likedByViewer = false,
   actionsDisabled = false,
   formatTimestamp = formatRelativeTimestamp,
   resolveUserName = getCommentUserName,
   onReply,
-  onToggleLike,
+  onToggleReaction,
   onEdit,
   onDelete,
   onImageClick,
@@ -119,7 +120,9 @@ export const Comment = ({
   const timestampLabel = formatTimestamp(comment.timestamp);
   const dateTime = toDateTimeAttribute(comment.timestamp);
   const attachmentUrl = comment.imageUrl?.trim() || null;
-  const likeButtonLabel = likedByViewer ? 'Unlike comment' : 'Like comment';
+  const visibleReactions = COMMENT_REACTION_OPTIONS.map((emoji) => ({ emoji, count: reactions[emoji]?.length ?? 0 })).filter(
+    (reaction) => reaction.count > 0
+  );
   const articleClass = highlighted
     ? isDarkMode
       ? 'border-sky-700 bg-sky-950 shadow-sky-950/40'
@@ -247,26 +250,74 @@ export const Comment = ({
             >
               Reply
             </button>
-            <button
-              type="button"
-              aria-label={likeButtonLabel}
-              onClick={() => onToggleLike?.({ commentId, shouldLike: !likedByViewer })}
-              disabled={actionsDisabled || !onToggleLike}
-              className={`group relative flex h-8 w-8 items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-                isDarkMode ? 'hover:bg-rose-950 active:bg-rose-900' : 'hover:bg-rose-50 active:bg-rose-100'
-              }`}
-            >
-              <span className="absolute h-8 w-8 rounded-full bg-rose-300 opacity-0 group-active:animate-ping group-active:opacity-30" aria-hidden="true" />
-              <img
-                src={likedByViewer ? heartFilledUrl : heartEmptyUrl}
-                alt=""
-                className="relative h-4 w-4 transition-transform duration-150 group-active:scale-125"
-                aria-hidden="true"
-              />
-            </button>
-            <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'} aria-label={`Like count ${likeCount}`}>
-              {likeCount} like{likeCount === 1 ? '' : 's'}
-            </span>
+            <div className="group relative flex items-center gap-1">
+              <button
+                type="button"
+                aria-label="Add reaction"
+                disabled={actionsDisabled || !onToggleReaction}
+                onClick={() => {
+                  if (!viewerReactionEmojis?.has(COMMENT_REACTION_OPTIONS[0])) {
+                    onToggleReaction?.({ commentId, emoji: COMMENT_REACTION_OPTIONS[0], shouldAdd: true });
+                  }
+                }}
+                className={`flex h-8 w-8 items-center justify-center rounded-full text-base transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                  isDarkMode ? 'hover:bg-rose-950 active:bg-rose-900' : 'hover:bg-rose-50 active:bg-rose-100'
+                }`}
+              >
+                <span aria-hidden="true">{COMMENT_REACTION_OPTIONS[0]}</span>
+              </button>
+              {onToggleReaction ? (
+                <div
+                  className={`invisible absolute bottom-8 left-0 z-20 flex gap-1 rounded-full border p-1 opacity-0 shadow-lg transition group-focus-within:visible group-focus-within:opacity-100 group-hover:visible group-hover:opacity-100 ${
+                    isDarkMode ? 'border-slate-700 bg-slate-900' : 'border-slate-200 bg-white'
+                  }`}
+                >
+                  {COMMENT_REACTION_OPTIONS.map((emoji) => {
+                    const hasReacted = viewerReactionEmojis?.has(emoji) ?? false;
+
+                    return (
+                      <button
+                        key={emoji}
+                        type="button"
+                        aria-label={`${hasReacted ? 'Remove' : 'Add'} ${emoji} reaction`}
+                        disabled={actionsDisabled}
+                        onClick={() => onToggleReaction({ commentId, emoji, shouldAdd: !hasReacted })}
+                        className={`flex h-8 w-8 items-center justify-center rounded-full border text-base transition hover:scale-110 disabled:cursor-not-allowed disabled:opacity-60 ${
+                          hasReacted
+                            ? isDarkMode
+                              ? 'border-sky-400 bg-sky-950'
+                              : 'border-sky-500 bg-sky-50'
+                            : 'border-transparent'
+                        }`}
+                      >
+                        <span aria-hidden="true">{emoji}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
+            {visibleReactions.map(({ emoji, count }) => {
+              const hasReacted = viewerReactionEmojis?.has(emoji) ?? false;
+
+              return (
+                <span
+                  key={emoji}
+                  className={`rounded-full border px-2 py-1 ${
+                    hasReacted
+                      ? isDarkMode
+                        ? 'border-sky-400 bg-sky-950 text-sky-100'
+                        : 'border-sky-500 bg-sky-50 text-sky-900'
+                      : isDarkMode
+                        ? 'border-slate-700 text-slate-300'
+                        : 'border-slate-200 text-slate-600'
+                  }`}
+                  aria-label={`${count} ${emoji} reaction${count === 1 ? '' : 's'}`}
+                >
+                  {emoji} {count}
+                </span>
+              );
+            })}
           </footer>
         </>
       )}
@@ -278,15 +329,14 @@ export type ThreadProps = {
   thread: ThreadModel;
   className?: string;
   signedInUserName?: string | null;
-  likeCountsByCommentId?: Partial<Record<CommentId, number>>;
-  commentsLikedByUser?: ReadonlySet<CommentId>;
+  reactionsByCommentId?: Partial<Record<CommentId, Record<string, string[]>>>;
   showDiagnostics?: boolean;
   actionsDisabled?: boolean;
   maxDepthIndent?: number;
   formatTimestamp?: (timestamp: TimestampMs) => string;
   resolveUserName?: (userName: string | null) => string;
   onReply?: (action: ReplyAction) => void;
-  onToggleLike?: (action: ToggleLikeAction) => void;
+  onToggleReaction?: (action: ToggleReactionAction) => void;
   onEdit?: (action: CommentEditAction) => void;
   onDelete?: (action: CommentEditAction) => void;
   renderCommentEditor?: CommentSlotRender;
@@ -317,15 +367,14 @@ export const Thread = ({
   thread,
   className,
   signedInUserName,
-  likeCountsByCommentId = {},
-  commentsLikedByUser,
+  reactionsByCommentId = {},
   showDiagnostics = false,
   actionsDisabled = false,
   maxDepthIndent = DEFAULT_MAX_DEPTH_INDENT,
   formatTimestamp,
   resolveUserName,
   onReply,
-  onToggleLike,
+  onToggleReaction,
   onEdit,
   onDelete,
   renderCommentEditor,
@@ -377,23 +426,29 @@ export const Thread = ({
     const shouldHighlight = Boolean(signedInUserName && comment.userName === signedInUserName);
     const canEdit = Boolean(signedInUserName && comment.userName === signedInUserName);
     const canDelete = canEdit || signedInUserName === 'B. Warnecke';
-    const likeCount = likeCountsByCommentId[commentId] ?? 0;
-    const likedByViewer = commentsLikedByUser?.has(commentId) ?? false;
+    const reactions = reactionsByCommentId[commentId] ?? {};
+    const viewerReactionEmojis = new Set(
+      signedInUserName
+        ? Object.entries(reactions)
+            .filter(([, userNames]) => userNames.includes(signedInUserName))
+            .map(([emoji]) => emoji)
+        : []
+    );
 
     return (
       <div key={commentId} className="space-y-3">
         <Comment
           commentId={commentId}
           comment={comment}
-          likeCount={likeCount}
+          reactions={reactions}
+          viewerReactionEmojis={viewerReactionEmojis}
           highlighted={shouldHighlight}
           isDisconnected={isDisconnected}
-          likedByViewer={likedByViewer}
           actionsDisabled={actionsDisabled}
           formatTimestamp={formatTimestamp}
           resolveUserName={resolveUserName}
           onReply={onReply}
-          onToggleLike={onToggleLike}
+          onToggleReaction={onToggleReaction}
           onEdit={canEdit ? onEdit : undefined}
           onDelete={canDelete ? onDelete : undefined}
           onImageClick={(src, alt) => setLightboxImage({ src, alt })}

@@ -1,4 +1,5 @@
 const COMMENT_KEY_PREFIX = `comments:v1`;
+const DEFAULT_REACTION_EMOJI = '❤️';
 
 const headers = {
   'Access-Control-Allow-Origin': '*',
@@ -82,7 +83,7 @@ const toThreadRedisKey = (thread) => {
   return `${COMMENT_KEY_PREFIX}:thread:${toThreadLocationKey(thread.locationId)}:${thread.rootCommentId}`;
 };
 
-const toCommentLikedUserNamesRedisKey = (commentId) => `${COMMENT_KEY_PREFIX}:comment:${commentId}:likes`;
+const toCommentReactionsRedisKey = (commentId) => `${COMMENT_KEY_PREFIX}:comment:${commentId}:likes`;
 
 const parseJsonBody = (event) => {
   if (!event.body) {
@@ -142,9 +143,15 @@ const isThreadMutation = (value) => {
       return typeof value.commentId === 'string' && isComment(value.comment) && typeof value.replyingTo === 'string';
     case 'delete-comment':
       return typeof value.commentId === 'string' && typeof value.wasReplyingTo === 'string';
-    case 'add-comment-like':
-    case 'remove-comment-like':
-      return typeof value.commentId === 'string' && typeof value.userName === 'string' && value.userName.length > 0;
+    case 'add-reaction':
+    case 'remove-reaction':
+      return (
+        typeof value.commentId === 'string' &&
+        typeof value.emoji === 'string' &&
+        value.emoji.length > 0 &&
+        typeof value.userName === 'string' &&
+        value.userName.length > 0
+      );
     default:
       return false;
   }
@@ -179,13 +186,38 @@ const deleteThread = async (threadKey) => {
   await redisDelete(threadKey);
 };
 
-const getLikedUserNamesForComment = async (commentId) => {
-  const value = await redisGet(toCommentLikedUserNamesRedisKey(commentId));
-  return Array.isArray(value) ? value.filter((userName) => typeof userName === 'string') : [];
+const normalizeCommentReactions = (value) => {
+  if (Array.isArray(value)) {
+    const likedUserNames = value.filter((userName) => typeof userName === 'string');
+    return likedUserNames.length > 0 ? { [DEFAULT_REACTION_EMOJI]: likedUserNames } : {};
+  }
+
+  if (!value || typeof value !== 'object') {
+    return {};
+  }
+
+  const reactions = {};
+  for (const [emoji, userNames] of Object.entries(value)) {
+    if (typeof emoji !== 'string' || !Array.isArray(userNames)) {
+      continue;
+    }
+
+    const normalizedUserNames = userNames.filter((userName) => typeof userName === 'string');
+    if (normalizedUserNames.length > 0) {
+      reactions[emoji] = normalizedUserNames;
+    }
+  }
+
+  return reactions;
 };
 
-const setLikedUserNamesForComment = async (commentId, likedUserNames) => {
-  await redisSet(toCommentLikedUserNamesRedisKey(commentId), likedUserNames);
+const getReactionsForComment = async (commentId) => {
+  const value = await redisGet(toCommentReactionsRedisKey(commentId));
+  return normalizeCommentReactions(value);
+};
+
+const setReactionsForComment = async (commentId, reactions) => {
+  await redisSet(toCommentReactionsRedisKey(commentId), normalizeCommentReactions(reactions));
 };
 
 const includesComment = (thread, commentId) => Boolean(thread.commentsById?.[commentId]);
@@ -335,13 +367,13 @@ const handleGet = async (event) => {
 
     const entries = await Promise.all(
       commentIds.map(async (commentId) => {
-        const likedUserNames = await getLikedUserNamesForComment(commentId);
-        return [commentId, likedUserNames];
+        const reactions = await getReactionsForComment(commentId);
+        return [commentId, reactions];
       })
     );
 
     return json(200, {
-      likedUserNamesByCommentId: Object.fromEntries(entries),
+      reactionsByCommentId: Object.fromEntries(entries),
     });
   }
 
@@ -372,47 +404,52 @@ const handlePost = async (event) => {
 
   const { mutation } = request;
 
-  if (mutation.type === 'add-comment-like') {
-    const likedUserNames = await getLikedUserNamesForComment(mutation.commentId);
-    if (likedUserNames.includes(mutation.userName)) {
+  if (mutation.type === 'add-reaction') {
+    const reactions = await getReactionsForComment(mutation.commentId);
+    const userNames = reactions[mutation.emoji] ?? [];
+    if (userNames.includes(mutation.userName)) {
       return json(200, {
-        type: 'comment-liked-users-updated',
+        type: 'comment-reactions-updated',
         commentId: mutation.commentId,
-        likedUserNames,
-        likeCount: likedUserNames.length,
+        reactions,
       });
     }
 
-    const nextLikedUserNames = [...likedUserNames, mutation.userName];
-    await setLikedUserNamesForComment(mutation.commentId, nextLikedUserNames);
+    const nextReactions = {
+      ...reactions,
+      [mutation.emoji]: [...userNames, mutation.userName],
+    };
+    await setReactionsForComment(mutation.commentId, nextReactions);
 
     return json(200, {
-      type: 'comment-liked-users-updated',
+      type: 'comment-reactions-updated',
       commentId: mutation.commentId,
-      likedUserNames: nextLikedUserNames,
-      likeCount: nextLikedUserNames.length,
+      reactions: normalizeCommentReactions(nextReactions),
     });
   }
 
-  if (mutation.type === 'remove-comment-like') {
-    const likedUserNames = await getLikedUserNamesForComment(mutation.commentId);
-    const nextLikedUserNames = likedUserNames.filter((userName) => userName !== mutation.userName);
-    if (likedUserNames.length === nextLikedUserNames.length) {
+  if (mutation.type === 'remove-reaction') {
+    const reactions = await getReactionsForComment(mutation.commentId);
+    const userNames = reactions[mutation.emoji] ?? [];
+    const nextUserNames = userNames.filter((userName) => userName !== mutation.userName);
+    if (userNames.length === nextUserNames.length) {
       return json(200, {
-        type: 'comment-liked-users-updated',
+        type: 'comment-reactions-updated',
         commentId: mutation.commentId,
-        likedUserNames,
-        likeCount: likedUserNames.length,
+        reactions,
       });
     }
 
-    await setLikedUserNamesForComment(mutation.commentId, nextLikedUserNames);
+    const nextReactions = {
+      ...reactions,
+      [mutation.emoji]: nextUserNames,
+    };
+    await setReactionsForComment(mutation.commentId, nextReactions);
 
     return json(200, {
-      type: 'comment-liked-users-updated',
+      type: 'comment-reactions-updated',
       commentId: mutation.commentId,
-      likedUserNames: nextLikedUserNames,
-      likeCount: nextLikedUserNames.length,
+      reactions: normalizeCommentReactions(nextReactions),
     });
   }
 

@@ -1,10 +1,11 @@
 import { Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle } from '@mui/material';
+import EmojiPicker, { Theme } from 'emoji-picker-react';
 import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { ConfigurationContext } from '../context/ConfigurationContext';
 import { PatreonContext } from '../context/PatreonContext';
 import { Thread as ThreadView } from './comments';
-import { fetchCommentLikedUserNames, fetchThreadsForPage, sendThreadMutation } from './comments-api';
-import { Comment, CommentId, PageLocationId, Thread, ThreadLocationId, toPageLocationId } from './dataModel';
+import { fetchCommentReactions, fetchThreadsForPage, sendThreadMutation } from './comments-api';
+import { Comment, CommentId, CommentReactions, PageLocationId, Thread, ThreadLocationId, toPageLocationId } from './dataModel';
 import { EmbeddedMediaInput } from './embedded-media-input';
 
 type CommentInputProps = {
@@ -60,13 +61,12 @@ const createComment = (text: string, userName: string | null, imageUrl: string |
 
 type LoadedComments = {
   threads: Thread[];
-  likeCountsByCommentId: Record<CommentId, number>;
-  commentsLikedByUserSet: Set<CommentId>;
+  reactionsByCommentId: Record<CommentId, CommentReactions>;
 };
 
 const commentLoadCache = new Map<string, { cachedAt: number; promise: Promise<LoadedComments> }>();
 const COMMENT_LOAD_CACHE_MS = 1000;
-const LIKE_MUTATION_DEBOUNCE_MS = 5000;
+const REACTION_MUTATION_DEBOUNCE_MS = 5000;
 
 const getCommentLoadCacheKey = (pageLocationId: PageLocationId, signedInUserName: string | null) => {
   return `${pageLocationId.bookId}:${pageLocationId.chapterId}:${signedInUserName ?? 'anonymous'}`;
@@ -86,16 +86,14 @@ const loadCommentsForPage = (pageLocationId: PageLocationId, signedInUserName: s
     if (commentIds.length === 0) {
       return {
         threads: threadsResponse.threads,
-        likeCountsByCommentId: {},
-        commentsLikedByUserSet: new Set<CommentId>(),
+        reactionsByCommentId: {},
       };
     }
 
-    const likesResponse = await fetchCommentLikedUserNames(commentIds, signedInUserName);
+    const reactionsResponse = await fetchCommentReactions(commentIds);
     return {
       threads: threadsResponse.threads,
-      likeCountsByCommentId: likesResponse.likeCountsByCommentId,
-      commentsLikedByUserSet: likesResponse.commentsLikedByUserSet,
+      reactionsByCommentId: reactionsResponse.reactionsByCommentId,
     };
   })();
 
@@ -119,8 +117,10 @@ const CommentInput = ({
   const [text, setText] = useState(initialText);
   const [imageUrl, setImageUrl] = useState<string | null>(initialImageUrl);
   const [isFocused, setIsFocused] = useState(autoFocus);
+  const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
   const [commentAnonymously, setCommentAnonymously] = useState(forceAnonymous);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const emojiPickerRef = useRef<HTMLDivElement | null>(null);
   const showActions = isFocused || text.trim().length > 0;
 
   useEffect(() => {
@@ -155,11 +155,53 @@ const CommentInput = ({
     textareaRef.current?.focus();
   }, [autoFocus]);
 
+  useEffect(() => {
+    if (!isEmojiPickerOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!emojiPickerRef.current || emojiPickerRef.current.contains(event.target as Node)) {
+        return;
+      }
+
+      setIsEmojiPickerOpen(false);
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [isEmojiPickerOpen]);
+
+  const insertEmoji = (emoji: string) => {
+    if (disabled) {
+      return;
+    }
+
+    const textarea = textareaRef.current;
+    if (!textarea) {
+      setText((previousText) => `${previousText}${emoji}`);
+      return;
+    }
+
+    const selectionStart = textarea.selectionStart ?? text.length;
+    const selectionEnd = textarea.selectionEnd ?? selectionStart;
+    const nextText = `${text.slice(0, selectionStart)}${emoji}${text.slice(selectionEnd)}`;
+    const nextCursorPosition = selectionStart + emoji.length;
+
+    setText(nextText);
+    setIsFocused(true);
+    window.requestAnimationFrame(() => {
+      textarea.focus();
+      textarea.setSelectionRange(nextCursorPosition, nextCursorPosition);
+    });
+  };
+
   const handleCancel = () => {
     setText('');
     setImageUrl(initialImageUrl);
     setCommentAnonymously(forceAnonymous);
     setIsFocused(false);
+    setIsEmojiPickerOpen(false);
     onCancel?.();
   };
 
@@ -174,6 +216,7 @@ const CommentInput = ({
     setImageUrl(null);
     setCommentAnonymously(forceAnonymous);
     setIsFocused(false);
+    setIsEmojiPickerOpen(false);
   };
 
   const commentInputClass = `block max-h-48 min-h-10 w-full resize-none overflow-hidden border-0 border-b bg-transparent px-0 py-2 text-sm leading-6 focus:outline-none focus:ring-0 disabled:opacity-60 ${
@@ -227,8 +270,33 @@ const CommentInput = ({
 
       {showActions ? (
         <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-1">
             <EmbeddedMediaInput disabled={disabled} onAttach={setImageUrl} />
+            <div ref={emojiPickerRef} className="relative">
+              <button
+                type="button"
+                aria-label="Add emoji"
+                aria-expanded={isEmojiPickerOpen}
+                disabled={disabled}
+                onClick={() => setIsEmojiPickerOpen((isOpen) => !isOpen)}
+                className={`flex h-9 w-9 items-center justify-center rounded-full text-xl transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                  isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-100'
+                }`}
+              >
+                <span aria-hidden="true">😊</span>
+              </button>
+              {isEmojiPickerOpen ? (
+                <div className="absolute left-0 top-11 z-20 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl shadow-xl">
+                  <EmojiPicker
+                    height={400}
+                    width={320}
+                    lazyLoadEmojis
+                    theme={isDarkMode ? Theme.DARK : Theme.LIGHT}
+                    onEmojiClick={(emojiData) => insertEmoji(emojiData.emoji)}
+                  />
+                </div>
+              ) : null}
+            </div>
             <label
               className={`flex cursor-pointer items-center gap-2 text-xs font-medium ${
                 isDarkMode ? 'text-slate-300' : 'text-slate-600'
@@ -239,7 +307,7 @@ const CommentInput = ({
                 checked={commentAnonymously}
                 disabled={disabled || forceAnonymous}
                 onChange={(event) => setCommentAnonymously(event.target.checked)}
-                className={`h-4 w-4 rounded ${isDarkMode ? 'border-slate-500 text-slate-100' : 'border-slate-300 text-slate-900'}`}
+                className={`h-4 w-4 ml-2 rounded ${isDarkMode ? 'border-slate-500 text-slate-100' : 'border-slate-300 text-slate-900'}`}
               />
               Comment Anonymously
             </label>
@@ -279,20 +347,33 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
   const patreonContext = useContext(PatreonContext);
   const { isDarkMode } = useContext(ConfigurationContext);
   const pageLocationId = useMemo(() => normalizePageLocation(locationId), [locationId]);
-  const signedInUserName = isLocalLibraryUrl() ? 'B. Warnecke' : (patreonContext?.userInfo?.userName ?? null);
+  const signedInUserName = isLocalLibraryUrl()
+    ? 'B. Warnecke'
+    : patreonContext?.isLoggedIn
+      ? (patreonContext.userInfo?.userName ?? null)
+      : null;
   const forceAnonymous = signedInUserName === null;
   const [threads, setThreads] = useState<Thread[]>([]);
-  const [likeCountsByCommentId, setLikeCountsByCommentId] = useState<Record<CommentId, number>>({});
-  const [commentsLikedByUser, setCommentsLikedByUser] = useState<Set<CommentId>>(() => new Set<CommentId>());
+  const [reactionsByCommentId, setReactionsByCommentId] = useState<Record<CommentId, CommentReactions>>({});
   const [replyingToCommentId, setReplyingToCommentId] = useState<CommentId | null>(null);
   const [editingCommentId, setEditingCommentId] = useState<CommentId | null>(null);
   const [pendingDeleteCommentId, setPendingDeleteCommentId] = useState<CommentId | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const syncedCommentsLikedByUserRef = useRef<Set<CommentId>>(new Set<CommentId>());
-  const pendingLikeStatesRef = useRef(new Map<CommentId, boolean>());
-  const likeDebounceTimersRef = useRef(new Map<CommentId, number>());
+  const syncedReactionsByCommentIdRef = useRef<Record<CommentId, CommentReactions>>({});
+  const pendingReactionStatesRef = useRef(new Map<string, { commentId: CommentId; emoji: string; shouldAdd: boolean }>());
+  const reactionDebounceTimersRef = useRef(new Map<string, number>());
+  const signedInUserNameRef = useRef<string | null>(signedInUserName);
+  const pageLocationIdRef = useRef(pageLocationId);
+
+  useEffect(() => {
+    signedInUserNameRef.current = signedInUserName;
+  }, [signedInUserName]);
+
+  useEffect(() => {
+    pageLocationIdRef.current = pageLocationId;
+  }, [pageLocationId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -308,14 +389,13 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
         }
 
         setThreads(loadedComments.threads);
-        setLikeCountsByCommentId(loadedComments.likeCountsByCommentId);
-        setCommentsLikedByUser(new Set(loadedComments.commentsLikedByUserSet));
-        syncedCommentsLikedByUserRef.current = new Set(loadedComments.commentsLikedByUserSet);
-        pendingLikeStatesRef.current.clear();
-        for (const timerId of likeDebounceTimersRef.current.values()) {
+        setReactionsByCommentId(loadedComments.reactionsByCommentId);
+        syncedReactionsByCommentIdRef.current = loadedComments.reactionsByCommentId;
+        pendingReactionStatesRef.current.clear();
+        for (const timerId of reactionDebounceTimersRef.current.values()) {
           window.clearTimeout(timerId);
         }
-        likeDebounceTimersRef.current.clear();
+        reactionDebounceTimersRef.current.clear();
       } catch (caughtError) {
         if (!cancelled) {
           setError(caughtError instanceof Error ? caughtError.message : 'Could not load comments.');
@@ -335,13 +415,21 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
   }, [pageLocationId, signedInUserName]);
 
   useEffect(() => {
-    const likeDebounceTimers = likeDebounceTimersRef.current;
+    const flushBeforePageLeaves = () => {
+      flushPendingReactions({ keepalive: true });
+    };
+
+    window.addEventListener('pagehide', flushBeforePageLeaves);
+    window.addEventListener('beforeunload', flushBeforePageLeaves);
 
     return () => {
-      for (const timerId of likeDebounceTimers.values()) {
+      window.removeEventListener('pagehide', flushBeforePageLeaves);
+      window.removeEventListener('beforeunload', flushBeforePageLeaves);
+      flushPendingReactions({ keepalive: true });
+      for (const timerId of reactionDebounceTimersRef.current.values()) {
         window.clearTimeout(timerId);
       }
-      likeDebounceTimers.clear();
+      reactionDebounceTimersRef.current.clear();
     };
   }, []);
 
@@ -491,85 +579,117 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
     }
   };
 
-  const handleToggleLike = async ({ commentId, shouldLike }: { commentId: CommentId; shouldLike: boolean }) => {
+  const applyReactionState = (
+    previousReactionsByCommentId: Record<CommentId, CommentReactions>,
+    commentId: CommentId,
+    emoji: string,
+    userName: string,
+    shouldAdd: boolean
+  ) => {
+    const previousReactions = previousReactionsByCommentId[commentId] ?? {};
+    const previousUserNames = previousReactions[emoji] ?? [];
+    const nextUserNames = shouldAdd
+      ? previousUserNames.includes(userName)
+        ? previousUserNames
+        : [...previousUserNames, userName]
+      : previousUserNames.filter((reactionUserName) => reactionUserName !== userName);
+
+    return {
+      ...previousReactionsByCommentId,
+      [commentId]: {
+        ...previousReactions,
+        [emoji]: nextUserNames,
+      },
+    };
+  };
+
+  const getReactionMutationKey = (commentId: CommentId, emoji: string) => `${commentId}:${emoji}`;
+
+  const handleToggleReaction = async ({ commentId, emoji, shouldAdd }: { commentId: CommentId; emoji: string; shouldAdd: boolean }) => {
     if (!signedInUserName) {
       return;
     }
 
-    const previousLikedByUser = commentsLikedByUser.has(commentId);
-    if (previousLikedByUser === shouldLike) {
+    const previousReactedByUser = reactionsByCommentId?.[commentId]?.[emoji]?.includes(signedInUserName) ?? false;
+    if (previousReactedByUser === shouldAdd) {
       return;
     }
 
     setError(null);
-    setCommentsLikedByUser((previousSet) => {
-      const nextSet = new Set(previousSet);
-      if (shouldLike) {
-        nextSet.add(commentId);
-      } else {
-        nextSet.delete(commentId);
-      }
-      return nextSet;
-    });
-    setLikeCountsByCommentId((previousCounts) => ({
-      ...previousCounts,
-      [commentId]: Math.max(0, (previousCounts[commentId] ?? 0) + (shouldLike ? 1 : -1)),
-    }));
+    setReactionsByCommentId((previousReactionsByCommentId) =>
+      applyReactionState(previousReactionsByCommentId, commentId, emoji, signedInUserName, shouldAdd)
+    );
 
-    pendingLikeStatesRef.current.set(commentId, shouldLike);
+    const mutationKey = getReactionMutationKey(commentId, emoji);
+    pendingReactionStatesRef.current.set(mutationKey, { commentId, emoji, shouldAdd });
 
-    const existingTimer = likeDebounceTimersRef.current.get(commentId);
+    const existingTimer = reactionDebounceTimersRef.current.get(mutationKey);
     if (existingTimer !== undefined) {
       window.clearTimeout(existingTimer);
     }
 
     const timerId = window.setTimeout(() => {
-      void flushPendingLike(commentId, signedInUserName);
-    }, LIKE_MUTATION_DEBOUNCE_MS);
-    likeDebounceTimersRef.current.set(commentId, timerId);
+      void flushPendingReaction(mutationKey, signedInUserName);
+    }, REACTION_MUTATION_DEBOUNCE_MS);
+    reactionDebounceTimersRef.current.set(mutationKey, timerId);
   };
 
-  const flushPendingLike = async (commentId: CommentId, userName: string) => {
-    const desiredLikedState = pendingLikeStatesRef.current.get(commentId);
-    if (desiredLikedState === undefined) {
+  const flushPendingReactions = (options?: { keepalive?: boolean }) => {
+    const userName = signedInUserNameRef.current;
+    if (!userName) {
       return;
     }
 
-    pendingLikeStatesRef.current.delete(commentId);
-    const timerId = likeDebounceTimersRef.current.get(commentId);
-    if (timerId !== undefined) {
-      window.clearTimeout(timerId);
-      likeDebounceTimersRef.current.delete(commentId);
+    for (const mutationKey of pendingReactionStatesRef.current.keys()) {
+      void flushPendingReaction(mutationKey, userName, options);
+    }
+  };
+
+  const flushPendingReaction = async (mutationKey: string, userName: string, options?: { keepalive?: boolean }) => {
+    const pendingReaction = pendingReactionStatesRef.current.get(mutationKey);
+    if (pendingReaction === undefined) {
+      return;
     }
 
-    const syncedLikedState = syncedCommentsLikedByUserRef.current.has(commentId);
-    if (desiredLikedState === syncedLikedState) {
+    pendingReactionStatesRef.current.delete(mutationKey);
+    const timerId = reactionDebounceTimersRef.current.get(mutationKey);
+    if (timerId !== undefined) {
+      window.clearTimeout(timerId);
+      reactionDebounceTimersRef.current.delete(mutationKey);
+    }
+
+    const { commentId, emoji, shouldAdd } = pendingReaction;
+    const syncedReactionState = syncedReactionsByCommentIdRef.current?.[commentId]?.[emoji]?.includes(userName) ?? false;
+    if (shouldAdd === syncedReactionState) {
       return;
     }
 
     try {
-      const response = await sendThreadMutation(pageLocationId, {
-        type: desiredLikedState ? 'add-comment-like' : 'remove-comment-like',
-        commentId,
-        userName,
-      });
+      const response = await sendThreadMutation(
+        pageLocationIdRef.current,
+        {
+          type: shouldAdd ? 'add-reaction' : 'remove-reaction',
+          commentId,
+          emoji,
+          userName,
+        },
+        options
+      );
 
-      if (response.type !== 'comment-liked-users-updated') {
+      if (response.type !== 'comment-reactions-updated') {
         return;
       }
 
-      syncedCommentsLikedByUserRef.current = new Set(syncedCommentsLikedByUserRef.current);
-      if (desiredLikedState) {
-        syncedCommentsLikedByUserRef.current.add(commentId);
-      } else {
-        syncedCommentsLikedByUserRef.current.delete(commentId);
-      }
-      setLikeCountsByCommentId((previousCounts) => ({
-        ...previousCounts,
-        [commentId]: response.likeCount,
+      syncedReactionsByCommentIdRef.current = {
+        ...syncedReactionsByCommentIdRef.current,
+        [commentId]: response.reactions,
+      };
+      setReactionsByCommentId((previousReactionsByCommentId) => ({
+        ...previousReactionsByCommentId,
+        [commentId]: response.reactions,
       }));
     } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : 'Could not update like.');
+      setError(caughtError instanceof Error ? caughtError.message : 'Could not update reaction.');
     }
   };
 
@@ -604,14 +724,13 @@ export const CommentSection = ({ locationId, className }: CommentSectionProps) =
             key={thread.rootCommentId}
             thread={thread}
             signedInUserName={signedInUserName}
-            likeCountsByCommentId={likeCountsByCommentId}
-            commentsLikedByUser={commentsLikedByUser}
+            reactionsByCommentId={reactionsByCommentId}
             actionsDisabled={isSubmitting}
             onReply={({ replyToCommentId }) => {
               setEditingCommentId(null);
               setReplyingToCommentId(replyToCommentId);
             }}
-            onToggleLike={signedInUserName ? (action) => void handleToggleLike(action) : undefined}
+            onToggleReaction={signedInUserName ? (action) => void handleToggleReaction(action) : undefined}
             onEdit={({ commentId }) => {
               setReplyingToCommentId(null);
               setEditingCommentId(commentId);

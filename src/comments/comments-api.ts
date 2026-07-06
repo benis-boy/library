@@ -1,4 +1,4 @@
-import { CommentId, CommentLikedUserNames, PageLocationId, Thread, ThreadMutation } from './dataModel';
+import { CommentId, CommentReactions, PageLocationId, Thread, ThreadMutation } from './dataModel';
 
 export type CommentsMutationResponse =
   | {
@@ -9,15 +9,14 @@ export type CommentsMutationResponse =
       threads: Thread[];
     }
   | {
-      type: 'comment-liked-users-updated';
+      type: 'comment-reactions-updated';
       commentId: CommentId;
-      likedUserNames: CommentLikedUserNames;
-      likeCount: number;
+      reactions: CommentReactions;
     };
 
 type RawCommentsMutationResponse =
   | Omit<Extract<CommentsMutationResponse, { type: 'threads-updated' }>, 'threads'>
-  | Extract<CommentsMutationResponse, { type: 'comment-liked-users-updated' }>;
+  | Extract<CommentsMutationResponse, { type: 'comment-reactions-updated' }>;
 
 export type FetchPageThreadsResponse = {
   pageLocationId: PageLocationId;
@@ -28,18 +27,44 @@ export type FetchPageThreadsResponse = {
 
 type RawFetchPageThreadsResponse = Omit<FetchPageThreadsResponse, 'threads'>;
 
-export type FetchCommentLikedUserNamesResponse = {
-  likedUserNamesByCommentId: Record<CommentId, CommentLikedUserNames>;
+export type FetchCommentReactionsResponse = {
+  reactionsByCommentId?: Record<CommentId, CommentReactions>;
+  likedUserNamesByCommentId?: Record<CommentId, string[]>;
 };
 
-export type CommentLikesForViewer = {
-  likedUserNamesByCommentId: Record<CommentId, CommentLikedUserNames>;
-  likeCountsByCommentId: Record<CommentId, number>;
-  commentsLikedByUser: CommentId[];
-  commentsLikedByUserSet: Set<CommentId>;
+export type CommentReactionsForViewer = {
+  reactionsByCommentId: Record<CommentId, CommentReactions>;
 };
 
 const COMMENTS_FUNCTION_URL = 'https://mellow-kitsune-6578b2.netlify.app/.netlify/functions/comments';
+const DEFAULT_REACTION_EMOJI = '❤️';
+
+const normalizeCommentReactions = (value: unknown): CommentReactions => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([, userNames]) => Array.isArray(userNames))
+      .map(([emoji, userNames]) => [emoji, (userNames as unknown[]).filter((userName): userName is string => typeof userName === 'string')])
+      .filter(([, userNames]) => userNames.length > 0)
+  );
+};
+
+const normalizeReactionsByCommentId = (commentIds: CommentId[], response: FetchCommentReactionsResponse) => {
+  return Object.fromEntries(
+    commentIds.map((commentId) => {
+      const reactions = response.reactionsByCommentId?.[commentId];
+      if (reactions) {
+        return [commentId, normalizeCommentReactions(reactions)];
+      }
+
+      const legacyUserNames = response.likedUserNamesByCommentId?.[commentId];
+      return [commentId, legacyUserNames?.length ? { [DEFAULT_REACTION_EMOJI]: legacyUserNames } : {}];
+    })
+  );
+};
 
 const parseJsonResponse = async <T>(response: Response): Promise<T> => {
   const raw = await response.text();
@@ -67,33 +92,25 @@ export const fetchThreadsForPage = async (pageLocationId: PageLocationId) => {
   };
 };
 
-export const fetchCommentLikedUserNames = async (commentIds: CommentId[], signedInUserName?: string | null): Promise<CommentLikesForViewer> => {
+export const fetchCommentReactions = async (commentIds: CommentId[]): Promise<CommentReactionsForViewer> => {
   const searchParams = new URLSearchParams({
     commentIds: commentIds.join(','),
   });
 
   const response = await fetch(`${COMMENTS_FUNCTION_URL}?${searchParams.toString()}`);
-  const likedUserNamesResponse = await parseJsonResponse<FetchCommentLikedUserNamesResponse>(response);
-  const likedUserNamesByCommentId = likedUserNamesResponse.likedUserNamesByCommentId;
-  const commentsLikedByUser = signedInUserName
-    ? commentIds.filter((commentId) => likedUserNamesByCommentId[commentId]?.includes(signedInUserName))
-    : [];
+  const reactionResponse = await parseJsonResponse<FetchCommentReactionsResponse>(response);
 
   return {
-    likedUserNamesByCommentId,
-    likeCountsByCommentId: Object.fromEntries(
-      Object.entries(likedUserNamesByCommentId).map(([commentId, likedUserNames]) => [commentId, likedUserNames.length])
-    ),
-    commentsLikedByUser,
-    commentsLikedByUserSet: new Set(commentsLikedByUser),
+    reactionsByCommentId: normalizeReactionsByCommentId(commentIds, reactionResponse),
   };
 };
 
-export const sendThreadMutation = async (pageLocationId: PageLocationId, mutation: ThreadMutation) => {
+export const sendThreadMutation = async (pageLocationId: PageLocationId, mutation: ThreadMutation, options?: { keepalive?: boolean }) => {
   const response = await fetch(COMMENTS_FUNCTION_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ pageLocationId, mutation }),
+    keepalive: options?.keepalive,
   });
 
   const data = await parseJsonResponse<RawCommentsMutationResponse>(response);

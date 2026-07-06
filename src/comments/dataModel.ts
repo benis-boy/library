@@ -35,7 +35,8 @@ export type CommentsState = {
   threadByLocation: Record<ThreadLocationKey, Thread[]>;
 };
 
-export type CommentLikedUserNames = string[];
+export type CommentReactionUserNames = string[];
+export type CommentReactions = Record<string, CommentReactionUserNames>;
 
 export type ThreadMutation =
   | {
@@ -56,13 +57,15 @@ export type ThreadMutation =
       wasReplyingTo: CommentId;
     }
   | {
-      type: 'add-comment-like';
+      type: 'add-reaction';
       commentId: CommentId;
+      emoji: string;
       userName: string;
     }
   | {
-      type: 'remove-comment-like';
+      type: 'remove-reaction';
       commentId: CommentId;
+      emoji: string;
       userName: string;
     };
 

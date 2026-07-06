@@ -24,6 +24,7 @@
     "@panzoom/panzoom": "^4.6.2",
     "@tailwindcss/vite": "^4.0.12",
     "@upstash/redis": "^1.38.0",
+    "emoji-picker-react": "^4.19.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.14.2",

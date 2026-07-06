@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { expect, waitFor, within } from 'storybook/test';
 import '../index.css';
 import { Thread } from './comments';
-import type { Comment as CommentModel, CommentId, CommentLikedUserNames, Thread as ThreadModel, TimestampMs } from './dataModel';
+import type { Comment as CommentModel, CommentId, CommentReactions, Thread as ThreadModel, TimestampMs } from './dataModel';
 
 const BASE_TIMESTAMP = Date.UTC(2026, 6, 5, 12, 0, 0);
 
@@ -45,24 +45,24 @@ const readerNames = [
 
 const names = (count: number, offset = 0) => readerNames.slice(offset, offset + count);
 
-const exampleLikedUserNamesByCommentId: Record<CommentId, CommentLikedUserNames> = {
-  root: names(12),
-  'reply-1': ['GifDropper', 'SinnohScholar'],
-  'reply-1-1': names(1, 2),
-  'reply-1-2': [],
-  'reply-2': names(4, 3),
-  'reply-2-1': ['GifDropper', ...names(2, 7)],
-  'reply-2-2': names(5, 9),
-  'reply-2-2-1': ['GifDropper'],
+const exampleReactionsByCommentId: Record<CommentId, CommentReactions> = {
+  root: { '❤️': names(12), '😂': ['GifDropper', 'SinnohScholar'] },
+  'reply-1': { '❤️': ['GifDropper', 'SinnohScholar'] },
+  'reply-1-1': { '👍': names(1, 2) },
+  'reply-1-2': {},
+  'reply-2': { '❤️': names(4, 3) },
+  'reply-2-1': { '😂': ['GifDropper', ...names(2, 7)] },
+  'reply-2-2': { '👍': names(5, 9) },
+  'reply-2-2-1': { '❤️': ['GifDropper'] },
 };
 
-const malformedLikedUserNamesByCommentId: Record<CommentId, CommentLikedUserNames> = {
-  root: names(5),
-  'child-1': ['ReaderTwo'],
-  'orphan-a': [],
-  'orphan-b': [],
-  'orphan-root': [],
-  'orphan-leaf': [],
+const malformedReactionsByCommentId: Record<CommentId, CommentReactions> = {
+  root: { '❤️': names(5) },
+  'child-1': { '👍': ['ReaderTwo'] },
+  'orphan-a': {},
+  'orphan-b': {},
+  'orphan-root': {},
+  'orphan-leaf': {},
 };
 
 const cloneThread = (thread: ThreadModel): ThreadModel => {
@@ -147,28 +147,28 @@ type CommentsStoryHarnessProps = {
   initialThread: ThreadModel;
   showDiagnostics?: boolean;
   signedInUserName?: string | null;
-  initialLikedUserNamesByCommentId?: Record<CommentId, CommentLikedUserNames>;
+  initialReactionsByCommentId?: Record<CommentId, CommentReactions>;
 };
 
 const CommentsStoryHarness = ({
   initialThread,
   showDiagnostics = false,
   signedInUserName = null,
-  initialLikedUserNamesByCommentId = exampleLikedUserNamesByCommentId,
+  initialReactionsByCommentId = exampleReactionsByCommentId,
 }: CommentsStoryHarnessProps) => {
   const [thread, setThread] = useState<ThreadModel>(() => cloneThread(initialThread));
-  const [likedUserNamesByCommentId, setLikedUserNamesByCommentId] = useState<Record<CommentId, CommentLikedUserNames>>(() => ({
-    ...initialLikedUserNamesByCommentId,
+  const [reactionsByCommentId, setReactionsByCommentId] = useState<Record<CommentId, CommentReactions>>(() => ({
+    ...initialReactionsByCommentId,
   }));
   const [eventLog, setEventLog] = useState<string[]>([]);
   const replyCounterRef = useRef(1);
 
   useEffect(() => {
     setThread(cloneThread(initialThread));
-    setLikedUserNamesByCommentId({ ...initialLikedUserNamesByCommentId });
+    setReactionsByCommentId({ ...initialReactionsByCommentId });
     setEventLog([]);
     replyCounterRef.current = 1;
-  }, [initialLikedUserNamesByCommentId, initialThread]);
+  }, [initialReactionsByCommentId, initialThread]);
 
   const appendEvent = (eventLabel: string) => {
     setEventLog((previousEvents) => [eventLabel, ...previousEvents].slice(0, 10));
@@ -194,9 +194,9 @@ const CommentsStoryHarness = ({
       );
 
       appendEvent(`Reply created: ${nextCommentId} -> ${replyToCommentId}`);
-      setLikedUserNamesByCommentId((previousLikedUserNames) => ({
-        ...previousLikedUserNames,
-        [nextCommentId]: [],
+      setReactionsByCommentId((previousReactions) => ({
+        ...previousReactions,
+        [nextCommentId]: {},
       }));
 
       return {
@@ -213,45 +213,39 @@ const CommentsStoryHarness = ({
     });
   };
 
-  const handleToggleLike = ({ commentId, shouldLike }: { commentId: CommentId; shouldLike: boolean }) => {
+  const handleToggleReaction = ({ commentId, emoji, shouldAdd }: { commentId: CommentId; emoji: string; shouldAdd: boolean }) => {
     if (!signedInUserName) {
-      appendEvent('Like skipped: no signed in user');
+      appendEvent('Reaction skipped: no signed in user');
       return;
     }
 
     if (!thread.commentsById[commentId]) {
-      appendEvent(`Like skipped: ${commentId} not found`);
+      appendEvent(`Reaction skipped: ${commentId} not found`);
       return;
     }
 
-    setLikedUserNamesByCommentId((previousLikedUserNames) => {
-      const currentLikedUserNames = previousLikedUserNames[commentId] ?? [];
-      const nextLikedUserNames = shouldLike
-        ? currentLikedUserNames.includes(signedInUserName)
-          ? currentLikedUserNames
-          : [...currentLikedUserNames, signedInUserName]
-        : currentLikedUserNames.filter((userName) => userName !== signedInUserName);
+    setReactionsByCommentId((previousReactionsByCommentId) => {
+      const currentReactions = previousReactionsByCommentId[commentId] ?? {};
+      const currentUserNames = currentReactions[emoji] ?? [];
+      const nextUserNames = shouldAdd
+        ? currentUserNames.includes(signedInUserName)
+          ? currentUserNames
+          : [...currentUserNames, signedInUserName]
+        : currentUserNames.filter((userName) => userName !== signedInUserName);
 
-      appendEvent(`${shouldLike ? 'Liked' : 'Unliked'} ${commentId}`);
+      appendEvent(`${shouldAdd ? 'Added' : 'Removed'} ${emoji} reaction on ${commentId}`);
 
       return {
-        ...previousLikedUserNames,
-        [commentId]: nextLikedUserNames,
+        ...previousReactionsByCommentId,
+        [commentId]: {
+          ...currentReactions,
+          [emoji]: nextUserNames,
+        },
       };
     });
   };
 
   const commentCount = Object.keys(thread.commentsById).length;
-  const likeCountsByCommentId = Object.fromEntries(
-    Object.entries(likedUserNamesByCommentId).map(([commentId, likedUserNames]) => [commentId, likedUserNames.length])
-  );
-  const commentsLikedByUser = new Set(
-    signedInUserName
-      ? Object.entries(likedUserNamesByCommentId)
-          .filter(([, likedUserNames]) => likedUserNames.includes(signedInUserName))
-          .map(([commentId]) => commentId)
-      : []
-  );
 
   return (
     <div className="min-h-screen bg-slate-100 p-6">
@@ -266,11 +260,10 @@ const CommentsStoryHarness = ({
         <Thread
           thread={thread}
           signedInUserName={signedInUserName}
-          likeCountsByCommentId={likeCountsByCommentId}
-          commentsLikedByUser={commentsLikedByUser}
+          reactionsByCommentId={reactionsByCommentId}
           showDiagnostics={showDiagnostics}
           onReply={handleReply}
-          onToggleLike={handleToggleLike}
+          onToggleReaction={handleToggleReaction}
         />
 
         <section className="rounded-xl border border-slate-300 bg-white p-4 shadow-sm">
@@ -296,13 +289,13 @@ const meta = {
   },
   args: {
     initialThread: buildExampleThread(),
-    initialLikedUserNamesByCommentId: exampleLikedUserNamesByCommentId,
+    initialReactionsByCommentId: exampleReactionsByCommentId,
     showDiagnostics: false,
     signedInUserName: 'GifDropper',
   },
   argTypes: {
     initialThread: { control: false },
-    initialLikedUserNamesByCommentId: { control: false },
+    initialReactionsByCommentId: { control: false },
     showDiagnostics: { control: 'boolean' },
     signedInUserName: { control: 'text' },
   },
@@ -312,21 +305,22 @@ export default meta;
 
 type Story = StoryObj<typeof meta>;
 
-export const ReplyAndLikeActionsUpdateThread: Story = {
-  name: '1. Reply and like actions update thread',
+export const ReplyAndReactionActionsUpdateThread: Story = {
+  name: '1. Reply and reaction actions update thread',
   play: async ({ canvas, canvasElement, step, userEvent }) => {
-    await step('Like and unlike the root comment', async () => {
+    await step('Add and remove a root comment reaction', async () => {
       const rootCard = canvasElement.querySelector('[data-comment-id="root"]');
       if (!(rootCard instanceof HTMLElement)) {
         throw new Error('Root comment card was not rendered.');
       }
 
       const rootComment = within(rootCard);
-      await userEvent.click(rootComment.getByRole('button', { name: 'Like comment' }));
-      await waitFor(() => expect(rootComment.getByText('13 likes')).toBeVisible());
+      await userEvent.hover(rootComment.getByRole('button', { name: 'Add reaction' }));
+      await userEvent.click(rootComment.getByRole('button', { name: 'Add 👍 reaction' }));
+      await waitFor(() => expect(rootComment.getByText('👍 1')).toBeVisible());
 
-      await userEvent.click(rootComment.getByRole('button', { name: 'Unlike comment' }));
-      await waitFor(() => expect(rootComment.getByText('12 likes')).toBeVisible());
+      await userEvent.click(rootComment.getByRole('button', { name: 'Remove 👍 reaction' }));
+      await waitFor(() => expect(rootComment.queryByText('👍 1')).not.toBeInTheDocument());
     });
 
     await step('Replying adds a new child comment', async () => {
@@ -346,8 +340,8 @@ export const ReplyAndLikeActionsUpdateThread: Story = {
       const log = await canvas.findByRole('list', { name: 'Interaction log' });
       const logScope = within(log);
 
-      await expect(logScope.getByText('Liked root')).toBeVisible();
-      await expect(logScope.getByText('Unliked root')).toBeVisible();
+      await expect(logScope.getByText('Added 👍 reaction on root')).toBeVisible();
+      await expect(logScope.getByText('Removed 👍 reaction on root')).toBeVisible();
       await expect(logScope.getByText('Reply created: auto-reply-1 -> reply-1')).toBeVisible();
     });
   },
@@ -357,7 +351,7 @@ export const MalformedThreadShowsDiagnosticsAndDisconnectedBranches: Story = {
   name: '2. Malformed thread shows diagnostics and disconnected branches',
   args: {
     initialThread: buildMalformedThread(),
-    initialLikedUserNamesByCommentId: malformedLikedUserNamesByCommentId,
+    initialReactionsByCommentId: malformedReactionsByCommentId,
     showDiagnostics: true,
     signedInUserName: 'ReaderTwo',
   },
