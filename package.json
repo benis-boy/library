@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "dev:browser": "vite --host --port 5173 --open /library/",
-    "gallery:admin": "python ./dev-tools/gallery_tag_admin.py",
+    "gallery:admin": "python ./dev-tools/gallery_admin_with_processing.py",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
