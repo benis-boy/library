@@ -237,7 +237,21 @@
       "tags": [
         "a:benisboy14",
         "c:lopunny",
-        "wallpaper"
+        "wallpaper",
+        "s:pokemon"
+      ]
+    },
+    {
+      "id": "54d85b41",
+      "thumbSrc": "assets/gallery/thumb/54d85b41.webp",
+      "fullSrc": "assets/gallery/full/54d85b41.webp",
+      "entryAddedAt": "2026-07-07T12:34:07Z",
+      "tags": [
+        "a:benisboy14",
+        "wallpaper",
+        "s:pokemon",
+        "c:lopunny",
+        "nsfw"
       ]
     }
   ],
@@ -258,6 +272,7 @@
     "christmas": "Christmas",
     "easter": "Easter",
     "halloween": "Halloween",
+    "nsfw": "Nsfw",
     "wallpaper": "Wallpaper"
   }
 }
