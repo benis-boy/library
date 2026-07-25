@@ -1,6 +1,7 @@
 import { useContext, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
+  CommentNotification,
   CommentsForLocationResponse,
   CommentReplyNotification,
   fetchCommentsForLocations,
@@ -62,20 +63,23 @@ export const NotificationsModal = ({
   const navigate = useNavigate();
   const { isDarkMode } = useContext(ConfigurationContext);
   const listRef = useRef<HTMLDivElement | null>(null);
-  const [items, setItems] = useState<CommentReplyNotification[]>([]);
+  const [items, setItems] = useState<CommentNotification[]>([]);
   const [details, setDetails] = useState<NotificationDetails>({});
   const [nextCursor, setNextCursor] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadDetails = async (notifications: CommentReplyNotification[]) => {
-    if (notifications.length === 0) {
+  const loadDetails = async (notifications: CommentNotification[]) => {
+    const notificationsWithCommentIds = notifications.filter(
+      (notification): notification is CommentReplyNotification => notification.type === 'comment-reply'
+    );
+    if (notificationsWithCommentIds.length === 0) {
       return;
     }
 
     const response = await fetchCommentsForLocations(
-      notifications.map((notification) => ({
+      notificationsWithCommentIds.map((notification) => ({
         locationId: notification.locationId,
         commentIds: [notification.parentCommentId, notification.replyCommentId],
       }))
@@ -151,8 +155,10 @@ export const NotificationsModal = ({
     }
   };
 
-  const goToThread = (notification: CommentReplyNotification) => {
-    const params = new URLSearchParams({ commentId: notification.replyCommentId });
+  const goToThread = (notification: CommentNotification) => {
+    const params = new URLSearchParams({
+      commentId: notification.type === 'comment-reply' ? notification.replyCommentId : notification.rootCommentId,
+    });
     if (notification.locationId.paragraphLocation) {
       params.set('paragraphLocation', JSON.stringify(notification.locationId.paragraphLocation));
     }
@@ -167,7 +173,7 @@ export const NotificationsModal = ({
         onClick={(event) => event.stopPropagation()}
       >
         <div className={`flex items-center justify-between gap-3 border-b p-4 ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
-          <h2 className="text-lg font-bold">Reply Notifications</h2>
+          <h2 className="text-lg font-bold">Comment Notifications</h2>
           <button type="button" className="rounded-full bg-[#BE3144] px-3 py-1 text-sm font-semibold text-white" onClick={onClose}>
             Close
           </button>
@@ -176,16 +182,19 @@ export const NotificationsModal = ({
         <div ref={listRef} className="overflow-y-auto p-4" onScroll={handleScroll}>
           {isLoading ? <p className="text-sm opacity-70">Loading notifications...</p> : null}
           {error ? <p className="rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
-          {!isLoading && items.length === 0 ? <p className="text-sm opacity-70">No reply notifications yet.</p> : null}
+          {!isLoading && items.length === 0 ? <p className="text-sm opacity-70">No comment notifications yet.</p> : null}
 
           <div className="space-y-3">
             {items.map((notification) => {
               const locationKey = toThreadLocationKey(notification.locationId);
               const locationDetails = details[locationKey];
-              const parent = locationDetails?.commentsById[notification.parentCommentId];
-              const reply = locationDetails?.commentsById[notification.replyCommentId];
-              const isMissingThread = locationDetails?.threadExists === false && parent === null && reply === null;
               const isNew = notification.createdAt > initialUnreadCutoff;
+              const parent = notification.type === 'comment-reply' ? locationDetails?.commentsById[notification.parentCommentId] : undefined;
+              const reply = notification.type === 'comment-reply' ? locationDetails?.commentsById[notification.replyCommentId] : undefined;
+              const rootComment = notification.type === 'comment-thread-start' ? locationDetails?.commentsById[notification.rootCommentId] : undefined;
+              const isMissingReplyThread =
+                notification.type === 'comment-reply' && locationDetails?.threadExists === false && parent === null && reply === null;
+              const isMissingStartThread = notification.type === 'comment-thread-start' && locationDetails?.threadExists === false && rootComment === null;
 
               return (
                 <article
@@ -201,11 +210,17 @@ export const NotificationsModal = ({
                   }`}
                 >
                   <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs opacity-75">
-                    <span>{notification.actorUserName ?? 'Anonymous'} replied</span>
+                    <span>
+                      {notification.actorUserName ?? 'Anonymous'} {notification.type === 'comment-reply' ? 'replied' : 'started a new thread'}
+                    </span>
                     <time dateTime={new Date(notification.createdAt).toISOString()}>{formatRelativeTime(notification.createdAt)}</time>
                   </div>
-                  {isMissingThread ? (
+                  {isMissingReplyThread || isMissingStartThread ? (
                     <div className="rounded-xl border border-current/10 p-3 text-sm italic opacity-80">Thread no longer exists.</div>
+                  ) : notification.type === 'comment-thread-start' ? (
+                    <div className="rounded-xl border border-current/10 p-2">
+                      <CommentText comment={rootComment} missingText="Comment no longer exists." />
+                    </div>
                   ) : (
                     <>
                       <div className="rounded-xl border border-current/10 p-2 opacity-80">

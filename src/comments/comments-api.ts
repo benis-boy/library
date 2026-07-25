@@ -69,13 +69,24 @@ export type CommentReplyNotification = {
   replyCommentId: CommentId;
 };
 
+export type CommentThreadStartNotification = {
+  id: string;
+  type: 'comment-thread-start';
+  createdAt: number;
+  actorUserName: string | null;
+  locationId: ThreadLocationId;
+  rootCommentId: CommentId;
+};
+
+export type CommentNotification = CommentReplyNotification | CommentThreadStartNotification;
+
 export type NotificationsSummaryResponse = {
   unreadCount: number;
   lastCheckedAt: number;
 };
 
 export type NotificationsListResponse = {
-  items: CommentReplyNotification[];
+  items: CommentNotification[];
   unreadCount: number;
   lastCheckedAt: number;
   nextCursor: number | null;

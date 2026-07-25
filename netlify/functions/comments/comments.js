@@ -11,6 +11,7 @@ const NOTIFICATION_CLEANUP_KEEP_NEWEST = 10;
 const NOTIFICATION_CLEANUP_MAX_AGE_MS = 180 * 24 * 60 * 60 * 1000;
 const NOTIFICATIONS_ADMIN_PATREON_USER_ID = '101723637';
 const SELF_REPLY_NOTIFICATIONS_SIGNED_USER = '__self-reply-admin-feed__';
+const NEW_THREAD_NOTIFICATIONS_SIGNED_USER = '__new-thread-admin-feed__';
 
 const headers = {
   'Access-Control-Allow-Origin': '*',
@@ -543,7 +544,9 @@ const parseNotification = (value) => {
 
   try {
     const parsed = JSON.parse(value);
-    return parsed?.type === 'comment-reply' && typeof parsed.createdAt === 'number' ? parsed : null;
+    return (parsed?.type === 'comment-reply' || parsed?.type === 'comment-thread-start') && typeof parsed.createdAt === 'number'
+      ? parsed
+      : null;
   } catch {
     return null;
   }
@@ -648,6 +651,21 @@ const storeSelfReplyNotification = async ({ actorOwner, locationId, parentCommen
   await redisSetAdd(toNotificationUsersRedisKey(), SELF_REPLY_NOTIFICATIONS_SIGNED_USER);
 };
 
+const storeThreadStartNotification = async ({ actorOwner, locationId, rootCommentId }) => {
+  const createdAt = Date.now();
+  const notification = {
+    id: createNotificationId(createdAt),
+    type: 'comment-thread-start',
+    createdAt,
+    actorUserName: actorOwner?.userName ?? null,
+    locationId,
+    rootCommentId,
+  };
+
+  await redisCommand(['ZADD', toUserNotificationsRedisKey(NEW_THREAD_NOTIFICATIONS_SIGNED_USER), createdAt, JSON.stringify(notification)]);
+  await redisSetAdd(toNotificationUsersRedisKey(), NEW_THREAD_NOTIFICATIONS_SIGNED_USER);
+};
+
 const maybeCreateReplyNotification = async ({ wasNewComment, previousThread, mutation, mutationOwner }) => {
   if (!wasNewComment) {
     return;
@@ -675,6 +693,18 @@ const maybeCreateReplyNotification = async ({ wasNewComment, previousThread, mut
     locationId: previousThread.locationId,
     parentCommentId: mutation.replyingTo,
     replyCommentId: mutation.commentId,
+  });
+};
+
+const maybeCreateThreadStartNotification = async ({ mutation, mutationOwner }) => {
+  if (!mutationOwner || mutation.type !== 'start-thread') {
+    return;
+  }
+
+  await storeThreadStartNotification({
+    actorOwner: mutationOwner,
+    locationId: mutation.locationId,
+    rootCommentId: mutation.rootCommentId,
   });
 };
 
@@ -1016,6 +1046,9 @@ const handlePost = async (event) => {
     const threadKey = await setThread(nextThread);
     await setThreadCommentCount(threadKey, countThreadComments(nextThread));
     await setThreadKeysForPage(pageLocationId, [...threadKeys.filter((existingThreadKey) => existingThreadKey !== threadKey), threadKey]);
+    await maybeCreateThreadStartNotification({ mutation, mutationOwner }).catch((error) => {
+      console.error('Failed to create thread-start notification:', error);
+    });
 
     const nextThreadKeys = await getThreadKeysForPage(pageLocationId);
     return json(200, await getThreadsUpdatedResponse(pageLocationId, nextThreadKeys, mutation.locationId));
