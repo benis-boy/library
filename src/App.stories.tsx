@@ -305,6 +305,7 @@ const verifyBlockedChapter = async ({
   await expect(await canvas.findByRole('heading', { level: 1, name: heading })).toBeVisible();
   await expect(await canvas.findByText(body)).toBeVisible();
   await expect(canvas.queryByRole('button', { name: 'Next Chapter' })).toBeNull();
+  await expect(canvas.queryByRole('heading', { level: 2, name: /comments/i })).toBeNull();
 
   const readerFrame = canvasElement.querySelector('iframe[title="Embedded Content"]');
   expect(readerFrame).toBeNull();

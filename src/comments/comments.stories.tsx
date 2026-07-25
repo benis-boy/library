@@ -324,12 +324,11 @@ export const ReplyAndReactionActionsUpdateThread: Story = {
       }
 
       const rootComment = within(rootCard);
-      await userEvent.hover(rootComment.getByRole('button', { name: 'Add reaction' }));
-      await userEvent.click(rootComment.getByRole('button', { name: 'Add 👍 reaction' }));
-      await waitFor(() => expect(rootComment.getByText('👍 1')).toBeVisible());
+      await userEvent.click(rootComment.getByRole('button', { name: 'Add reaction' }));
+      await waitFor(() => expect(rootComment.getByText('❤️ 13')).toBeVisible());
 
-      await userEvent.click(rootComment.getByRole('button', { name: 'Remove 👍 reaction' }));
-      await waitFor(() => expect(rootComment.queryByText('👍 1')).not.toBeInTheDocument());
+      await userEvent.click(rootComment.getByText('❤️ 13').closest('button') as HTMLButtonElement);
+      await waitFor(() => expect(rootComment.getByText('❤️ 12')).toBeVisible());
     });
 
     await step('Replying adds a new child comment', async () => {
@@ -349,8 +348,8 @@ export const ReplyAndReactionActionsUpdateThread: Story = {
       const log = await canvas.findByRole('list', { name: 'Interaction log' });
       const logScope = within(log);
 
-      await expect(logScope.getByText('Added 👍 reaction on root')).toBeVisible();
-      await expect(logScope.getByText('Removed 👍 reaction on root')).toBeVisible();
+      await expect(logScope.getByText('Added ❤️ reaction on root')).toBeVisible();
+      await expect(logScope.getByText('Removed ❤️ reaction on root')).toBeVisible();
       await expect(logScope.getByText('Reply created: auto-reply-1 -> reply-1')).toBeVisible();
     });
   },

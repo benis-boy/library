@@ -5,6 +5,7 @@ import { InnerApp } from '../App';
 import type { SourceType } from '../constants';
 import { ConfigurationProvider } from '../context/ConfigurationProvider';
 import { LibraryProvider } from '../context/LibraryProvider';
+import { installCommentsApiMock, type MockCommentsApiState } from './commentsApiMock';
 import { MockPatreonProvider } from './MockPatreonProvider';
 
 export type FullAppHarnessProps = {
@@ -15,6 +16,7 @@ export type FullAppHarnessProps = {
   selectedBook?: SourceType;
   selectedChapter?: string;
   storageState?: Record<string, string>;
+  commentsApiMockState?: MockCommentsApiState;
 };
 
 type FetchLike = typeof window.fetch;
@@ -189,12 +191,16 @@ export const FullAppHarness = ({
   selectedBook,
   selectedChapter,
   storageState,
+  commentsApiMockState,
 }: FullAppHarnessProps) => {
   const [isReady, setIsReady] = useState(false);
 
   useLayoutEffect(() => {
     const previousHash = window.location.hash;
-    const restoreFetch = installSecureChapterFetchMock(window.fetch.bind(window));
+    const restoreSecureChapterFetch = installSecureChapterFetchMock(window.fetch.bind(window));
+    const restoreCommentsApiFetch = commentsApiMockState
+      ? installCommentsApiMock(window.fetch.bind(window), commentsApiMockState)
+      : undefined;
 
     resetAppStorage();
     if (selectedBook) {
@@ -214,11 +220,12 @@ export const FullAppHarness = ({
 
     return () => {
       setIsReady(false);
-      restoreFetch();
+      restoreCommentsApiFetch?.();
+      restoreSecureChapterFetch();
       resetAppStorage();
       window.history.replaceState({}, document.title, `${window.location.pathname}${window.location.search}${previousHash}`);
     };
-  }, [initialHash, selectedBook, selectedChapter, storageState]);
+  }, [commentsApiMockState, initialHash, selectedBook, selectedChapter, storageState]);
 
   if (!isReady) {
     return null;

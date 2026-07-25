@@ -35,7 +35,6 @@ export const ConfigurationView = () => {
   const handleClearLocalFiles = () => {
     try {
       clearAppStorage();
-      console.info('Local storage cleared successfully!');
     } catch (error) {
       console.error('Error clearing local storage:', error);
     }

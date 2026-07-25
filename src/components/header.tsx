@@ -109,7 +109,7 @@ const WebsiteHeader = ({
     setIsNotificationsOpen(true);
   };
 
-  const closeNotifications = (_options?: { preserveUnreadCutoff?: boolean }) => {
+  const closeNotifications = () => {
     setIsNotificationsOpen(false);
   };
 

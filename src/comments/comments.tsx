@@ -148,7 +148,7 @@ export const CommentPreview = ({
           >
             {comment.text}
           </p>
-          {attachmentUrl ? (
+          {attachmentUrl && (!compact || expanded) ? (
             <img
               src={attachmentUrl}
               alt="Comment attachment"

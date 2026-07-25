@@ -634,7 +634,7 @@ export const NotificationsModal = ({
           </div>
         </div>
 
-        <div ref={listRef} className="overflow-y-auto overscroll-contain p-4" onScroll={handleScroll}>
+        <div ref={listRef} aria-label="Notifications list" className="overflow-y-auto overscroll-contain p-4" onScroll={handleScroll}>
           {isLoading ? <p className="text-sm opacity-70">Loading notifications...</p> : null}
           {error ? (
             <p className="rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
@@ -675,6 +675,7 @@ export const NotificationsModal = ({
               return (
                 <article
                   key={notification.id}
+                  data-notification-id={notification.id}
                   className={`rounded-2xl border p-3 ${
                     isNew
                       ? isDarkMode

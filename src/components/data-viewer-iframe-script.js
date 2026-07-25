@@ -15,10 +15,6 @@ let pointerInteraction = null;
 const TOUCH_TAP_MOVE_THRESHOLD = 25;
 const TOUCH_TAP_MAX_DURATION_MS = 500;
 
-function traceParagraphComment(eventName, details) {
-  console.log('[ParagraphComments][iframe]', eventName, details || {});
-}
-
 function hasActiveTextSelection() {
   const selection = window.getSelection();
   return Boolean(selection && !selection.isCollapsed && String(selection).trim());
@@ -45,7 +41,6 @@ function hideParagraphCommentButton() {
 
   activeParagraph = null;
   paragraphCommentButtonHitArea.classList.remove('is-visible');
-  traceParagraphComment('hide-button');
 }
 
 function isParagraphCommentButtonTarget(target) {
@@ -74,11 +69,6 @@ function showParagraphCommentButton(paragraph) {
 
   paragraphCommentButtonHitArea.style.left = left + 'px';
   paragraphCommentButtonHitArea.style.top = top + 'px';
-  traceParagraphComment('show-button', {
-    paragraphIndex: Number(paragraph.getAttribute('data-paragraph-index')),
-    left,
-    top,
-  });
 }
 
 function scheduleParagraphCommentButton(paragraph) {
@@ -92,9 +82,6 @@ function scheduleParagraphCommentButton(paragraph) {
     paragraphCommentTimer = null;
     showParagraphCommentButton(paragraph);
   }, 1000);
-  traceParagraphComment('schedule-button', {
-    paragraphIndex: Number(paragraph.getAttribute('data-paragraph-index')),
-  });
 }
 
 Array.from(document.querySelectorAll('p')).forEach(function (paragraph, index) {
@@ -135,11 +122,9 @@ function renderParagraphCommentCounts(countsByParagraphIndex) {
 function requestParagraphComments(paragraphIndex) {
   const numericParagraphIndex = Number(paragraphIndex);
   if (!Number.isFinite(numericParagraphIndex)) {
-    traceParagraphComment('request-comments-invalid-index', { paragraphIndex });
     return;
   }
 
-  traceParagraphComment('request-comments', { paragraphIndex: numericParagraphIndex });
   window.parent.postMessage({ type: 'paragraph-comment-requested', paragraphIndex: numericParagraphIndex }, '*');
 }
 
@@ -148,9 +133,6 @@ window.addEventListener('message', function (event) {
     return;
   }
 
-  traceParagraphComment('counts-updated', {
-    countKeys: Object.keys(event.data.countsByParagraphIndex || {}),
-  });
   renderParagraphCommentCounts(event.data.countsByParagraphIndex);
 });
 
@@ -159,16 +141,7 @@ document.addEventListener('pointerdown', function (event) {
     return;
   }
 
-  traceParagraphComment('pointerdown', {
-    pointerId: event.pointerId,
-    pointerType: event.pointerType,
-    targetTag: event.target instanceof Element ? event.target.tagName : null,
-  });
-
   if (isParagraphCommentButtonTarget(event.target) || isParagraphCommentCountTarget(event.target)) {
-    traceParagraphComment('pointerdown-ignored-existing-control', {
-      pointerId: event.pointerId,
-    });
     return;
   }
 
@@ -176,9 +149,6 @@ document.addEventListener('pointerdown', function (event) {
   if (!paragraph) {
     pointerInteraction = null;
     hideParagraphCommentButton();
-    traceParagraphComment('pointerdown-no-paragraph', {
-      pointerId: event.pointerId,
-    });
     return;
   }
 
@@ -191,12 +161,6 @@ document.addEventListener('pointerdown', function (event) {
     startTime: Date.now(),
     moved: false,
   };
-  traceParagraphComment('pointerdown-tracked', {
-    pointerId: event.pointerId,
-    paragraphIndex: Number(paragraph.getAttribute('data-paragraph-index')),
-    x: event.clientX,
-    y: event.clientY,
-  });
 });
 
 document.addEventListener('pointermove', function (event) {
@@ -209,11 +173,6 @@ document.addEventListener('pointermove', function (event) {
     Math.abs(event.clientY - pointerInteraction.startY) > TOUCH_TAP_MOVE_THRESHOLD
   ) {
     pointerInteraction.moved = true;
-    traceParagraphComment('pointermove-cancel-tap', {
-      pointerId: event.pointerId,
-      deltaX: event.clientX - pointerInteraction.startX,
-      deltaY: event.clientY - pointerInteraction.startY,
-    });
   }
 });
 
@@ -236,18 +195,6 @@ document.addEventListener('pointerup', function (event) {
     activeParagraph === paragraph &&
     paragraphCommentButtonHitArea.classList.contains('is-visible');
 
-  traceParagraphComment('pointerup', {
-    pointerId: event.pointerId,
-    pointerType: event.pointerType,
-    paragraphIndex: paragraph ? Number(paragraph.getAttribute('data-paragraph-index')) : null,
-    trackedParagraphIndex: Number(pointerInteraction.paragraph.getAttribute('data-paragraph-index')),
-    moved: pointerInteraction.moved,
-    pressDurationMs,
-    selectionActive,
-    shouldShowButton,
-    shouldToggleOff,
-  });
-
   pointerInteraction = null;
 
   if (shouldToggleOff) {
@@ -268,9 +215,6 @@ document.addEventListener('pointercancel', function (event) {
     return;
   }
 
-  traceParagraphComment('pointercancel', {
-    pointerId: event.pointerId,
-  });
   pointerInteraction = null;
   hideParagraphCommentButton();
 });
@@ -290,12 +234,10 @@ paragraphCommentButton.addEventListener('click', function (event) {
   event.stopPropagation();
 
   if (!activeParagraph) {
-    traceParagraphComment('button-click-without-active-paragraph');
     return;
   }
 
   const paragraphIndex = Number(activeParagraph.getAttribute('data-paragraph-index'));
-  traceParagraphComment('button-click', { paragraphIndex });
   requestParagraphComments(paragraphIndex);
 });
 
@@ -308,9 +250,6 @@ document.addEventListener('click', function (event) {
   const paragraphCommentCount = target.closest('.paragraph-comment-count');
   if (paragraphCommentCount) {
     event.preventDefault();
-    traceParagraphComment('count-click', {
-      paragraphIndex: Number(paragraphCommentCount.getAttribute('data-paragraph-comment-index')),
-    });
     requestParagraphComments(paragraphCommentCount.getAttribute('data-paragraph-comment-index'));
     return;
   }

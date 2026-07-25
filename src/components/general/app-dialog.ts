@@ -5,6 +5,7 @@ type AppDialogSlotPropsOptions = {
   isDarkMode: boolean;
   zIndex?: number;
   paperClassName?: string;
+  paperAriaLabel?: string;
   paperSx?: SxProps<Theme>;
   backdropSx?: SxProps<Theme>;
 };
@@ -26,12 +27,14 @@ export const getAppDialogSlotProps = ({
   isDarkMode,
   zIndex,
   paperClassName,
+  paperAriaLabel,
   paperSx,
   backdropSx,
 }: AppDialogSlotPropsOptions): DialogProps['slotProps'] => ({
   root: zIndex === undefined ? undefined : { sx: { zIndex } },
   paper: {
     className: paperClassName,
+    'aria-label': paperAriaLabel,
     sx: combineSx(
       isDarkMode
         ? {
@@ -42,7 +45,7 @@ export const getAppDialogSlotProps = ({
         : undefined,
       paperSx
     ),
-  },
+  } as NonNullable<DialogProps['slotProps']>['paper'],
   backdrop: {
     sx: combineSx(isDarkMode ? { backgroundColor: 'rgba(0, 0, 0, 0.7)' } : undefined, backdropSx),
   },
