@@ -3,8 +3,9 @@ import { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { getGalleryManifestPath } from '../../cacheVersioning';
 import { ConfigurationContext } from '../../context/ConfigurationContext';
+import { setGalleryLastVisitedAt } from '../../storage/appStorage';
 import { ImageLightbox } from './ImageLightbox';
-import { BASE_URL, markGalleryAsVisited, toPublicAssetPath, toTimestamp } from './galleryShared';
+import { BASE_URL, toPublicAssetPath, toTimestamp } from './galleryShared';
 import {
   GalleryTagOption,
   normalizeGalleryTag,
@@ -50,7 +51,7 @@ export const GalleryPage = ({ onTagOptionsChange }: GalleryPageProps) => {
   const settleTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
-    markGalleryAsVisited();
+    setGalleryLastVisitedAt(Date.now());
   }, []);
 
   useEffect(() => {

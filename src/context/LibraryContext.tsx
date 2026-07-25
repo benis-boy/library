@@ -2,6 +2,16 @@ import { createContext, useCallback, useContext } from 'react';
 import { getBookChapterContentPath, getBookManifestMetadataPath } from '../cacheVersioning';
 import { SourceType, SourceTypes } from '../constants';
 import { PatreonContext } from './PatreonContext';
+export {
+  clearLegacyChapterEncryptionKeys,
+  DEFAULT_BOOK,
+  getStoredSelectedBook,
+  getStoredSelectedChapter,
+  isAppStorageEvent,
+  isLibrarySelectionStorageKey,
+  setStoredSelectedBook,
+  setStoredSelectedChapter,
+} from '../storage/appStorage';
 
 export type AccessDeniedReason = 'login_required' | 'supporter_required';
 
@@ -48,12 +58,6 @@ export type LibraryContextType = {
   setSelectedBook: (book: SourceType, loadChapterToo: boolean) => Promise<BookSelectionResult>;
   setSelectedChapter: (book: SourceType, chapter: string, secured?: boolean) => Promise<ChapterSelectionResult>;
 };
-
-const LIBRARY_SELECTED_BOOK_KEY = 'SELECTED_BOOK';
-const LIBRARY_SELECTED_CHAPTER_SUFFIX = '_SELECTED_CHAPTER';
-const LEGACY_LIBRARY_ENCRYPTION_PREFIX = 'IS_ENCRYPTED_';
-
-export const DEFAULT_BOOK: SourceType = 'PSSJ';
 
 const chapterMetadataCache = new Map<SourceType, Promise<ChapterNavigationEntry[]>>();
 const CHAPTER_ID_PATTERN = /^[0-9a-f]{8}$/i;
@@ -123,48 +127,6 @@ export const parseReaderRoute = (bookParam: string | undefined, chapterParam: st
 
   return { book, chapter };
 };
-
-const getSelectedChapterStorageKey = (book: SourceType) => `${book}${LIBRARY_SELECTED_CHAPTER_SUFFIX}`;
-
-export const isLibrarySelectionStorageKey = (key: string) =>
-  key === LIBRARY_SELECTED_BOOK_KEY ||
-  key.endsWith(LIBRARY_SELECTED_CHAPTER_SUFFIX);
-
-export const clearLegacyChapterEncryptionKeys = () => {
-  for (let index = localStorage.length - 1; index >= 0; index--) {
-    const key = localStorage.key(index);
-    if (key?.startsWith(LEGACY_LIBRARY_ENCRYPTION_PREFIX)) {
-      localStorage.removeItem(key);
-    }
-  }
-};
-
-export function getStoredSelectedBook(): SourceType {
-  const storedBook = localStorage.getItem(LIBRARY_SELECTED_BOOK_KEY);
-  if (isSourceType(storedBook)) {
-    return storedBook;
-  }
-
-  localStorage.setItem(LIBRARY_SELECTED_BOOK_KEY, DEFAULT_BOOK);
-  return DEFAULT_BOOK;
-}
-
-export function setStoredSelectedBook(book: SourceType) {
-  localStorage.setItem(LIBRARY_SELECTED_BOOK_KEY, book);
-}
-
-export function getStoredSelectedChapter(book: SourceType): string | undefined {
-  return normalizeChapterReference(localStorage.getItem(getSelectedChapterStorageKey(book)) || undefined);
-}
-
-export function setStoredChapterSelection(book: SourceType, chapter: string) {
-  const normalized = normalizeChapterReference(chapter);
-  if (!normalized) {
-    return;
-  }
-
-  localStorage.setItem(getSelectedChapterStorageKey(book), normalized);
-}
 
 export const LibraryContext = createContext<LibraryContextType | undefined>(undefined);
 

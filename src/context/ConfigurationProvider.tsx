@@ -2,39 +2,28 @@ import React, { ReactNode, useEffect, useState } from 'react';
 import { ConfigurationContext } from './ConfigurationContext';
 import { Box } from '@mui/material';
 import { APP_STORAGE_CLEARED_EVENT } from '../localStorageReset';
-
-const DEFAULT_IS_DARK_MODE = false;
-const DEFAULT_SELECTED_FONT = 'Lexend';
-const DEFAULT_FONT_SIZE = 17;
-const DEFAULT_WHITE_TONE = '#d';
+import {
+  getStoredConfig,
+  setStoredFontSize,
+  setStoredIsDarkMode,
+  setStoredSelectedFont,
+  setStoredWhiteTone,
+} from '../storage/appStorage';
 
 export const ConfigurationProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
-    const stored = localStorage.getItem('config_isDarkMode');
-    return stored ? JSON.parse(stored) : DEFAULT_IS_DARK_MODE;
-  });
-
-  const [selectedFont, setSelectedFont] = useState<string>(() => {
-    const stored = localStorage.getItem('config_selectedFont');
-    return stored || DEFAULT_SELECTED_FONT;
-  });
-
-  const [fontSize, setFontSize] = useState<number>(() => {
-    const stored = localStorage.getItem('config_fontSize');
-    return stored ? JSON.parse(stored) : DEFAULT_FONT_SIZE;
-  });
-
-  const [whiteTone, setWhiteTone] = useState<string>(() => {
-    const stored = localStorage.getItem('config_whiteTone');
-    return stored || DEFAULT_WHITE_TONE;
-  });
+  const initialConfig = getStoredConfig();
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(initialConfig.isDarkMode);
+  const [selectedFont, setSelectedFont] = useState<string>(initialConfig.selectedFont);
+  const [fontSize, setFontSize] = useState<number>(initialConfig.fontSize);
+  const [whiteTone, setWhiteTone] = useState<string>(initialConfig.whiteTone);
 
   useEffect(() => {
     const handleAppStorageCleared = () => {
-      setIsDarkMode(DEFAULT_IS_DARK_MODE);
-      setSelectedFont(DEFAULT_SELECTED_FONT);
-      setFontSize(DEFAULT_FONT_SIZE);
-      setWhiteTone(DEFAULT_WHITE_TONE);
+      const config = getStoredConfig();
+      setIsDarkMode(config.isDarkMode);
+      setSelectedFont(config.selectedFont);
+      setFontSize(config.fontSize);
+      setWhiteTone(config.whiteTone);
     };
 
     window.addEventListener(APP_STORAGE_CLEARED_EVENT, handleAppStorageCleared);
@@ -44,19 +33,19 @@ export const ConfigurationProvider: React.FC<{ children: ReactNode }> = ({ child
   }, []);
 
   useEffect(() => {
-    localStorage.setItem('config_isDarkMode', JSON.stringify(isDarkMode));
+    setStoredIsDarkMode(isDarkMode);
   }, [isDarkMode]);
 
   useEffect(() => {
-    localStorage.setItem('config_selectedFont', selectedFont);
+    setStoredSelectedFont(selectedFont);
   }, [selectedFont]);
 
   useEffect(() => {
-    localStorage.setItem('config_fontSize', JSON.stringify(fontSize));
+    setStoredFontSize(fontSize);
   }, [fontSize]);
 
   useEffect(() => {
-    localStorage.setItem('config_whiteTone', whiteTone);
+    setStoredWhiteTone(whiteTone);
   }, [whiteTone]);
 
   return (

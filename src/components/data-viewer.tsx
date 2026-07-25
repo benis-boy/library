@@ -10,6 +10,7 @@ import dataViewerIframeScript from './data-viewer-iframe-script.js?raw';
 import AccessRestrictedMessage from './notLoggedIn';
 import PatreonMessage from './notASupporter';
 import { ImageLightbox } from './gallery/ImageLightbox';
+import { getReaderScroll } from '../storage/appStorage';
 import {
   getNextChapterForBook,
   getReaderRoute,
@@ -27,6 +28,7 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
   const { isDarkMode, selectedFont, fontSize } = useContext(ConfigurationContext);
   const lContext = useContext(LibraryContext);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const lastRestoredReaderKeyRef = useRef<string | null>(null);
   const [galleryMap, setGalleryMap] = useState<Record<string, { fullSrc: string }>>({});
   const [lightboxImageId, setLightboxImageId] = useState<string | null>(null);
   const [paragraphCommentLocation, setParagraphCommentLocation] = useState<ThreadLocationId | null>(null);
@@ -165,13 +167,75 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
   }, [content, iframeRef]);
 
   useEffect(() => {
-    if (scrollerRef.current) {
-      scrollerRef.current.scrollTo({
-        top: 0,
-        behavior: 'smooth',
-      });
+    const routeInfo = parseReaderRoute(params.bookId, params.chapter);
+    const scroller = scrollerRef.current;
+    if (!routeInfo || !scroller || (!content && !accessDeniedReason)) {
+      return;
     }
-  }, [params.bookId, params.chapter, scrollerRef]);
+
+    const readerKey = `${routeInfo.book}:${routeInfo.chapter}:${content ? 'content' : accessDeniedReason}:${selectedFont}:${fontSize}:${isDarkMode}`;
+    if (lastRestoredReaderKeyRef.current === readerKey) {
+      return;
+    }
+
+    let cancelled = false;
+    let frameId: number | undefined;
+    let timeoutId: number | undefined;
+    let attempts = 0;
+    let stableHeightFrames = 0;
+    let previousScrollHeight = -1;
+
+    const restore = () => {
+      if (cancelled) {
+        return;
+      }
+
+      const iframeHeight = iframeRef.current?.getBoundingClientRect().height ?? 0;
+      const maxScrollTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+      if (previousScrollHeight === scroller.scrollHeight) {
+        stableHeightFrames += 1;
+      } else {
+        stableHeightFrames = 0;
+        previousScrollHeight = scroller.scrollHeight;
+      }
+
+      const hasSettledHeight = accessDeniedReason || (iframeHeight > 0 && attempts >= 6 && stableHeightFrames >= 2) || attempts >= 20;
+
+      if (!hasSettledHeight) {
+        attempts += 1;
+        timeoutId = window.setTimeout(() => {
+          frameId = window.requestAnimationFrame(restore);
+        }, 50);
+        return;
+      }
+
+      const stored = getReaderScroll(routeInfo.book);
+      let top = 0;
+      if (stored?.chapter === routeInfo.chapter) {
+        const savedMaxScrollTop = Math.max(1, stored.scrollHeight - stored.clientHeight);
+        const heightDelta = Math.abs(scroller.scrollHeight - stored.scrollHeight);
+        top = heightDelta > 8 ? (stored.scrollTop / savedMaxScrollTop) * maxScrollTop : stored.scrollTop;
+      }
+
+      scroller.scrollTo({
+        top: Math.min(Math.max(0, top), maxScrollTop),
+        behavior: 'auto',
+      });
+      lastRestoredReaderKeyRef.current = readerKey;
+    };
+
+    frameId = window.requestAnimationFrame(restore);
+
+    return () => {
+      cancelled = true;
+      if (frameId !== undefined) {
+        window.cancelAnimationFrame(frameId);
+      }
+      if (timeoutId !== undefined) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [accessDeniedReason, content, fontSize, isDarkMode, params.bookId, params.chapter, scrollerRef, selectedFont]);
 
   useEffect(() => {
     if (iframeRef.current) {
@@ -318,7 +382,6 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
         }
 
         const paragraphLocation = createParagraphLocation(bookId, chapterId, paragraphs, paragraphIndex);
-        console.log('ParagraphLocation', paragraphLocation);
         setActiveParagraphCommentCount(paragraphCommentCounts[paragraphIndex] ?? 0);
         setParagraphCommentLocation({ bookId, chapterId, paragraphLocation });
       }
@@ -463,7 +526,10 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
       />
 
       {paragraphCommentLocation ? (
-        <div className="fixed inset-0 z-[2100] flex items-center justify-center bg-slate-950/60 px-3 py-6" onClick={() => setParagraphCommentLocation(null)}>
+        <div
+          className="fixed inset-0 z-[2100] flex items-center justify-center bg-slate-950/60 px-3 py-6"
+          onClick={() => setParagraphCommentLocation(null)}
+        >
           <div
             className={`max-h-full w-full max-w-3xl overflow-y-auto rounded-2xl p-5 shadow-2xl ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}
             onClick={(event) => event.stopPropagation()}
@@ -475,7 +541,9 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
               <button
                 type="button"
                 className={`rounded-full px-3 py-1 text-sm font-semibold ${
-                  isDarkMode ? 'bg-slate-800 text-slate-100 hover:bg-slate-700' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  isDarkMode
+                    ? 'bg-slate-800 text-slate-100 hover:bg-slate-700'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                 }`}
                 onClick={() => setParagraphCommentLocation(null)}
               >

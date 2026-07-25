@@ -1,14 +1,15 @@
 import { Box } from '@mui/material';
-import React, { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { GalleryNavigator } from './components/gallery/GalleryNavigator';
 import { GalleryTagOption } from './components/gallery/tagUtils';
 import WebsiteHeader from './components/header';
 import { Navigator } from './components/navigator';
 import { ConfigurationProvider } from './context/ConfigurationProvider';
-import { DEFAULT_BOOK, getReaderRoute } from './context/LibraryContext';
+import { DEFAULT_BOOK, getReaderRoute, parseReaderRoute } from './context/LibraryContext';
 import { LibraryProvider } from './context/LibraryProvider';
 import { PatreonProvider } from './context/PatreonProvider';
+import { setReaderScroll } from './storage/appStorage';
 
 const Homepage = lazy(() => import('./components/homepage').then((module) => ({ default: module.Homepage })));
 const GalleryPage = lazy(() =>
@@ -47,6 +48,45 @@ export function InnerApp() {
   const drawerRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
   const lastScrollY = useRef(0);
+  const scrollSaveTimeoutRef = useRef<number | undefined>(undefined);
+
+  const activeReaderRoute = useMemo(() => {
+    const match = location.pathname.match(/^\/reader\/([^/]+)\/([^/]+)$/);
+    return parseReaderRoute(match?.[1], match?.[2]);
+  }, [location.pathname]);
+
+  const saveReaderScrollNow = useCallback(
+    (scroller: HTMLDivElement | null = scrollerRef.current) => {
+      if (!activeReaderRoute || !scroller) {
+        return;
+      }
+
+      const payload = {
+        chapter: activeReaderRoute.chapter,
+        scrollTop: scroller.scrollTop,
+        scrollHeight: scroller.scrollHeight,
+        clientHeight: scroller.clientHeight,
+        updatedAt: Date.now(),
+      };
+      setReaderScroll(activeReaderRoute.book, payload);
+      window.history.replaceState({ ...window.history.state, readerScroll: payload }, document.title, window.location.href);
+    },
+    [activeReaderRoute]
+  );
+
+  const scheduleReaderScrollSave = useCallback(
+    (scroller: HTMLDivElement) => {
+      if (!activeReaderRoute || scrollSaveTimeoutRef.current !== undefined) {
+        return;
+      }
+
+      scrollSaveTimeoutRef.current = window.setTimeout(() => {
+        scrollSaveTimeoutRef.current = undefined;
+        saveReaderScrollNow(scroller);
+      }, 250);
+    },
+    [activeReaderRoute, saveReaderScrollNow]
+  );
 
   const [drawerWidth, setDrawerWidth] = useState(0);
   useEffect(() => {
@@ -65,6 +105,7 @@ export function InnerApp() {
   const handleScroll = useCallback(
     (e: React.UIEvent<HTMLDivElement, UIEvent>) => {
       const y = e.currentTarget.scrollTop;
+      scheduleReaderScrollSave(e.currentTarget);
       if (y > lastScrollY.current) {
         if (isReaderRoute) {
           setIsHeaderVisible(false);
@@ -76,8 +117,37 @@ export function InnerApp() {
       }
       lastScrollY.current = y;
     },
-    [hasTouch, isReaderRoute]
+    [hasTouch, isReaderRoute, scheduleReaderScrollSave]
   );
+
+  useEffect(() => {
+    const flushReaderScroll = () => {
+      if (scrollSaveTimeoutRef.current !== undefined) {
+        window.clearTimeout(scrollSaveTimeoutRef.current);
+        scrollSaveTimeoutRef.current = undefined;
+      }
+      saveReaderScrollNow();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        flushReaderScroll();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pagehide', flushReaderScroll);
+    window.addEventListener('beforeunload', flushReaderScroll);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pagehide', flushReaderScroll);
+      window.removeEventListener('beforeunload', flushReaderScroll);
+      flushReaderScroll();
+      if (scrollSaveTimeoutRef.current !== undefined) {
+        window.clearTimeout(scrollSaveTimeoutRef.current);
+      }
+    };
+  }, [saveReaderScrollNow]);
 
   return (
     <div className="w-full h-full">

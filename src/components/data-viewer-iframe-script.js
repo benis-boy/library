@@ -11,6 +11,18 @@ document.body.appendChild(paragraphCommentButtonHitArea);
 
 let paragraphCommentTimer = null;
 let activeParagraph = null;
+let pointerInteraction = null;
+const TOUCH_TAP_MOVE_THRESHOLD = 25;
+const TOUCH_TAP_MAX_DURATION_MS = 500;
+
+function traceParagraphComment(eventName, details) {
+  console.log('[ParagraphComments][iframe]', eventName, details || {});
+}
+
+function hasActiveTextSelection() {
+  const selection = window.getSelection();
+  return Boolean(selection && !selection.isCollapsed && String(selection).trim());
+}
 
 function getParagraphFromEvent(event) {
   const target = event.target;
@@ -33,9 +45,22 @@ function hideParagraphCommentButton() {
 
   activeParagraph = null;
   paragraphCommentButtonHitArea.classList.remove('is-visible');
+  traceParagraphComment('hide-button');
+}
+
+function isParagraphCommentButtonTarget(target) {
+  return target instanceof Element && Boolean(target.closest('.paragraph-comment-button-hit-area'));
+}
+
+function isParagraphCommentCountTarget(target) {
+  return target instanceof Element && Boolean(target.closest('.paragraph-comment-count'));
 }
 
 function showParagraphCommentButton(paragraph) {
+  if (activeParagraph && activeParagraph !== paragraph) {
+    activeParagraph.classList.remove('paragraph-comment-target');
+  }
+
   activeParagraph = paragraph;
   activeParagraph.classList.add('paragraph-comment-target');
 
@@ -49,6 +74,11 @@ function showParagraphCommentButton(paragraph) {
 
   paragraphCommentButtonHitArea.style.left = left + 'px';
   paragraphCommentButtonHitArea.style.top = top + 'px';
+  traceParagraphComment('show-button', {
+    paragraphIndex: Number(paragraph.getAttribute('data-paragraph-index')),
+    left,
+    top,
+  });
 }
 
 function scheduleParagraphCommentButton(paragraph) {
@@ -62,6 +92,9 @@ function scheduleParagraphCommentButton(paragraph) {
     paragraphCommentTimer = null;
     showParagraphCommentButton(paragraph);
   }, 1000);
+  traceParagraphComment('schedule-button', {
+    paragraphIndex: Number(paragraph.getAttribute('data-paragraph-index')),
+  });
 }
 
 Array.from(document.querySelectorAll('p')).forEach(function (paragraph, index) {
@@ -102,9 +135,11 @@ function renderParagraphCommentCounts(countsByParagraphIndex) {
 function requestParagraphComments(paragraphIndex) {
   const numericParagraphIndex = Number(paragraphIndex);
   if (!Number.isFinite(numericParagraphIndex)) {
+    traceParagraphComment('request-comments-invalid-index', { paragraphIndex });
     return;
   }
 
+  traceParagraphComment('request-comments', { paragraphIndex: numericParagraphIndex });
   window.parent.postMessage({ type: 'paragraph-comment-requested', paragraphIndex: numericParagraphIndex }, '*');
 }
 
@@ -113,56 +148,131 @@ window.addEventListener('message', function (event) {
     return;
   }
 
+  traceParagraphComment('counts-updated', {
+    countKeys: Object.keys(event.data.countsByParagraphIndex || {}),
+  });
   renderParagraphCommentCounts(event.data.countsByParagraphIndex);
 });
 
-document.addEventListener('pointerover', function (event) {
-  if (event.pointerType === 'touch') {
-    return;
-  }
-
-  const paragraph = getParagraphFromEvent(event);
-  if (!paragraph) {
-    return;
-  }
-
-  scheduleParagraphCommentButton(paragraph);
-});
-
 document.addEventListener('pointerdown', function (event) {
-  if (event.pointerType !== 'touch') {
+  if (event.pointerType === 'mouse' && event.button !== 0) {
+    return;
+  }
+
+  traceParagraphComment('pointerdown', {
+    pointerId: event.pointerId,
+    pointerType: event.pointerType,
+    targetTag: event.target instanceof Element ? event.target.tagName : null,
+  });
+
+  if (isParagraphCommentButtonTarget(event.target) || isParagraphCommentCountTarget(event.target)) {
+    traceParagraphComment('pointerdown-ignored-existing-control', {
+      pointerId: event.pointerId,
+    });
     return;
   }
 
   const paragraph = getParagraphFromEvent(event);
   if (!paragraph) {
+    pointerInteraction = null;
+    hideParagraphCommentButton();
+    traceParagraphComment('pointerdown-no-paragraph', {
+      pointerId: event.pointerId,
+    });
     return;
   }
 
-  scheduleParagraphCommentButton(paragraph);
+  pointerInteraction = {
+    paragraph,
+    pointerId: event.pointerId,
+    pointerType: event.pointerType,
+    startX: event.clientX,
+    startY: event.clientY,
+    startTime: Date.now(),
+    moved: false,
+  };
+  traceParagraphComment('pointerdown-tracked', {
+    pointerId: event.pointerId,
+    paragraphIndex: Number(paragraph.getAttribute('data-paragraph-index')),
+    x: event.clientX,
+    y: event.clientY,
+  });
 });
 
-document.addEventListener('pointerout', function (event) {
-  const relatedTarget = event.relatedTarget instanceof Node ? event.relatedTarget : null;
-  if (
-    !activeParagraph ||
-    relatedTarget === paragraphCommentButtonHitArea ||
-    paragraphCommentButtonHitArea.contains(relatedTarget)
-  ) {
+document.addEventListener('pointermove', function (event) {
+  if (!pointerInteraction || pointerInteraction.pointerId !== event.pointerId) {
     return;
   }
 
-  if (activeParagraph.contains(relatedTarget)) {
+  if (
+    Math.abs(event.clientX - pointerInteraction.startX) > TOUCH_TAP_MOVE_THRESHOLD ||
+    Math.abs(event.clientY - pointerInteraction.startY) > TOUCH_TAP_MOVE_THRESHOLD
+  ) {
+    pointerInteraction.moved = true;
+    traceParagraphComment('pointermove-cancel-tap', {
+      pointerId: event.pointerId,
+      deltaX: event.clientX - pointerInteraction.startX,
+      deltaY: event.clientY - pointerInteraction.startY,
+    });
+  }
+});
+
+document.addEventListener('pointerup', function (event) {
+  if (!pointerInteraction || pointerInteraction.pointerId !== event.pointerId) {
+    return;
+  }
+
+  const paragraph = getParagraphFromEvent(event);
+  const pressDurationMs = Date.now() - pointerInteraction.startTime;
+  const selectionActive = hasActiveTextSelection();
+  const shouldShowButton =
+    paragraph &&
+    paragraph === pointerInteraction.paragraph &&
+    !pointerInteraction.moved &&
+    pressDurationMs <= TOUCH_TAP_MAX_DURATION_MS &&
+    !selectionActive;
+  const shouldToggleOff =
+    shouldShowButton &&
+    activeParagraph === paragraph &&
+    paragraphCommentButtonHitArea.classList.contains('is-visible');
+
+  traceParagraphComment('pointerup', {
+    pointerId: event.pointerId,
+    pointerType: event.pointerType,
+    paragraphIndex: paragraph ? Number(paragraph.getAttribute('data-paragraph-index')) : null,
+    trackedParagraphIndex: Number(pointerInteraction.paragraph.getAttribute('data-paragraph-index')),
+    moved: pointerInteraction.moved,
+    pressDurationMs,
+    selectionActive,
+    shouldShowButton,
+    shouldToggleOff,
+  });
+
+  pointerInteraction = null;
+
+  if (shouldToggleOff) {
+    hideParagraphCommentButton();
+    return;
+  }
+
+  if (shouldShowButton) {
+    showParagraphCommentButton(paragraph);
     return;
   }
 
   hideParagraphCommentButton();
 });
 
-document.addEventListener('pointerup', function (event) {
-  if (event.pointerType === 'touch' && paragraphCommentTimer !== null) {
-    hideParagraphCommentButton();
+document.addEventListener('pointercancel', function (event) {
+  if (!pointerInteraction || pointerInteraction.pointerId !== event.pointerId) {
+    return;
   }
+
+  traceParagraphComment('pointercancel', {
+    pointerId: event.pointerId,
+  });
+  pointerInteraction = null;
+  hideParagraphCommentButton();
 });
 
 document.addEventListener('scroll', hideParagraphCommentButton, { passive: true });
@@ -180,10 +290,12 @@ paragraphCommentButton.addEventListener('click', function (event) {
   event.stopPropagation();
 
   if (!activeParagraph) {
+    traceParagraphComment('button-click-without-active-paragraph');
     return;
   }
 
   const paragraphIndex = Number(activeParagraph.getAttribute('data-paragraph-index'));
+  traceParagraphComment('button-click', { paragraphIndex });
   requestParagraphComments(paragraphIndex);
 });
 
@@ -196,6 +308,9 @@ document.addEventListener('click', function (event) {
   const paragraphCommentCount = target.closest('.paragraph-comment-count');
   if (paragraphCommentCount) {
     event.preventDefault();
+    traceParagraphComment('count-click', {
+      paragraphIndex: Number(paragraphCommentCount.getAttribute('data-paragraph-comment-index')),
+    });
     requestParagraphComments(paragraphCommentCount.getAttribute('data-paragraph-comment-index'));
     return;
   }

@@ -2,50 +2,25 @@ import { ReactNode, useCallback, useEffect, useState } from 'react';
 import { MembershipData, PatreonContext, PatreonVerifierResponseBody } from './PatreonContext';
 import { SourceType } from '../constants';
 import { APP_STORAGE_CLEARED_EVENT } from '../localStorageReset';
+import {
+  clearPendingPatreonLogin,
+  clearStoredPatreonToken,
+  getForceReloginFlag,
+  getPendingPatreonLogin,
+  getStoredPatreonToken,
+  setForceReloginFlag,
+  setPendingPatreonLogin,
+  setStoredPatreonToken,
+} from '../storage/appStorage';
 
-const PENDING_PATREON_LOGIN_KEY = 'PENDING_PATREON_LOGIN';
 const READER_HASH_PREFIX = '#/reader/';
-
-type PendingPatreonLogin = {
-  nonce: string;
-  targetHash: string;
-};
 
 const createOAuthNonce = () => `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 
 const isReaderHash = (value: string | null | undefined): value is string => typeof value === 'string' && value.startsWith(READER_HASH_PREFIX);
 
-const readPendingPatreonLogin = (): PendingPatreonLogin | null => {
-  const raw = localStorage.getItem(PENDING_PATREON_LOGIN_KEY);
-  if (!raw) {
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as Partial<PendingPatreonLogin>;
-    if (typeof parsed?.nonce !== 'string' || !isReaderHash(parsed?.targetHash)) {
-      return null;
-    }
-
-    return {
-      nonce: parsed.nonce,
-      targetHash: parsed.targetHash,
-    };
-  } catch {
-    return null;
-  }
-};
-
-const clearPendingPatreonLogin = () => {
-  localStorage.removeItem(PENDING_PATREON_LOGIN_KEY);
-};
-
-const storePendingPatreonLogin = (pending: PendingPatreonLogin) => {
-  localStorage.setItem(PENDING_PATREON_LOGIN_KEY, JSON.stringify(pending));
-};
-
 const restorePendingReaderRoute = (expectedNonce?: string | null) => {
-  const pending = readPendingPatreonLogin();
+  const pending = getPendingPatreonLogin();
   if (!pending) {
     clearPendingPatreonLogin();
     return;
@@ -80,7 +55,7 @@ export const PatreonProvider = ({ children }: { children: ReactNode }) => {
   const REDIRECT_URI = 'https://benis-boy.github.io/library/';
 
   const resetSession = useCallback((clearPendingLogin: boolean) => {
-    localStorage.removeItem('patreon_token');
+    clearStoredPatreonToken();
     if (clearPendingLogin) {
       clearPendingPatreonLogin();
     }
@@ -108,27 +83,21 @@ export const PatreonProvider = ({ children }: { children: ReactNode }) => {
 
   // Check authentication on mount
   useEffect(() => {
-    const _token = localStorage.getItem('patreon_token');
-    if (_token) {
-      try {
-        const token = JSON.parse(_token) as PatreonVerifierResponseBody;
-
-        const { userInfo, signedUser, encryption_password, encryption_passwordv2 } = token;
-        if (typeof signedUser !== 'string') {
-          resetSession(false);
-          return;
-        }
-
-        setUserInfo(userInfo);
-        setIsLoggedIn(true);
-        setSignedUser(signedUser);
-        setEncryptionPassword(encryption_password);
-        setEncryptionPasswordV2(encryption_passwordv2);
-      } catch (e) {
-        console.log(e);
+    const token = getStoredPatreonToken();
+    if (token) {
+      const { userInfo, signedUser, encryption_password, encryption_passwordv2 } = token;
+      if (typeof signedUser !== 'string') {
+        resetSession(false);
+        return;
       }
+
+      setUserInfo(userInfo);
+      setIsLoggedIn(true);
+      setSignedUser(signedUser);
+      setEncryptionPassword(encryption_password);
+      setEncryptionPasswordV2(encryption_passwordv2);
     }
-  }, []);
+  }, [resetSession]);
 
   // Handle logout
   const handleLogout = () => {
@@ -140,7 +109,7 @@ export const PatreonProvider = ({ children }: { children: ReactNode }) => {
     const nonce = createOAuthNonce();
     const currentHash = window.location.hash;
     if (isReaderHash(currentHash)) {
-      storePendingPatreonLogin({ nonce, targetHash: currentHash });
+      setPendingPatreonLogin({ nonce, targetHash: currentHash });
     } else {
       clearPendingPatreonLogin();
     }
@@ -183,8 +152,8 @@ export const PatreonProvider = ({ children }: { children: ReactNode }) => {
       parsedData.encryption_passwordv2 &&
       typeof parsedData.encryption_password === 'string'
     ) {
-      localStorage.setItem('patreon_token', JSON.stringify(parsedData));
       const { userInfo, signedUser, encryption_password, encryption_passwordv2 } = parsedData as PatreonVerifierResponseBody;
+      setStoredPatreonToken(parsedData as PatreonVerifierResponseBody);
       setUserInfo(userInfo);
       setIsLoggedIn(true);
       setSignedUser(signedUser);
@@ -232,9 +201,8 @@ export const PatreonProvider = ({ children }: { children: ReactNode }) => {
 
   // One-Time force relogin
   useEffect(() => {
-    const FLAG_KEY = 'forceRelogin_2025_07';
-    if (!localStorage.getItem(FLAG_KEY)) {
-      localStorage.setItem(FLAG_KEY, 'done');
+    if (!getForceReloginFlag()) {
+      setForceReloginFlag(true);
       resetSession(false);
       window.location.reload();
     }

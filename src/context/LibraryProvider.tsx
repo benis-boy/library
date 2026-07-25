@@ -12,12 +12,13 @@ import {
   getResolvedChapterPathForBook,
   getStoredSelectedBook,
   getStoredSelectedChapter,
+  isAppStorageEvent,
   isLibrarySelectionStorageKey,
   LibraryContext,
   LibraryContextType,
   LibraryData,
   normalizeChapterReference,
-  setStoredChapterSelection,
+  setStoredSelectedChapter,
   setStoredSelectedBook,
   useLoadContent,
 } from './LibraryContext';
@@ -80,7 +81,7 @@ export const LibraryProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     const handleStorage = (event: StorageEvent) => {
-      if (event.storageArea !== localStorage) {
+      if (!isAppStorageEvent(event)) {
         return;
       }
 
@@ -179,7 +180,7 @@ export const LibraryProvider = ({ children }: { children: ReactNode }) => {
 
       setStoredSelectedBook(book);
       if (normalizedChapter) {
-        setStoredChapterSelection(book, normalizedChapter);
+        setStoredSelectedChapter(book, normalizedChapter);
       }
     },
     []
