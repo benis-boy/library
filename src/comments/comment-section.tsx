@@ -118,7 +118,7 @@ const loadCommentsForLocation = (locationId: PageLocationId | ThreadLocationId, 
   return promise;
 };
 
-const CommentInput = ({
+export const CommentInput = ({
   autoFocus = false,
   disabled = false,
   placeholder = 'Add a comment...',

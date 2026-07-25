@@ -44,6 +44,8 @@ export type CommentProps = {
   onDelete?: (action: CommentEditAction) => void;
   onImageClick?: (imageSrc: string, imageAlt: string) => void;
   editor?: ReactNode;
+  showReplyAction?: boolean;
+  showReactionPicker?: boolean;
 };
 
 const DEFAULT_MAX_DEPTH_INDENT = 8;
@@ -113,6 +115,8 @@ export const Comment = ({
   onDelete,
   onImageClick,
   editor,
+  showReplyAction = true,
+  showReactionPicker = true,
 }: CommentProps) => {
   const { isDarkMode } = useContext(ConfigurationContext);
   const [isActionsMenuOpen, setIsActionsMenuOpen] = useState(false);
@@ -244,89 +248,95 @@ export const Comment = ({
             </button>
           ) : null}
 
-          <footer className="mt-3 flex items-center gap-3 text-xs">
-            <button
-              type="button"
-              onClick={() => onReply?.({ replyToCommentId: commentId })}
-              disabled={actionsDisabled || !onReply}
-              className={`rounded-full px-2 py-1 font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-                isDarkMode ? 'text-slate-300 hover:bg-slate-800 hover:text-slate-100' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-              }`}
-            >
-              Reply
-            </button>
-            <div className="group relative flex items-center gap-1">
-              <button
-                type="button"
-                aria-label="Add reaction"
-                disabled={actionsDisabled || !onToggleReaction}
-                onClick={() => {
-                  if (!viewerReactionEmojis?.has(COMMENT_REACTION_OPTIONS[0])) {
-                    onToggleReaction?.({ commentId, emoji: COMMENT_REACTION_OPTIONS[0], shouldAdd: true });
-                  }
-                }}
-                className={`flex h-8 w-8 items-center justify-center rounded-full text-base transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-                  isDarkMode ? 'hover:bg-rose-950 active:bg-rose-900' : 'hover:bg-rose-50 active:bg-rose-100'
-                }`}
-              >
-                <span aria-hidden="true">{COMMENT_REACTION_OPTIONS[0]}</span>
-              </button>
-              {onToggleReaction ? (
-                <div
-                  className={`invisible absolute bottom-8 left-0 z-20 flex gap-1 rounded-full border p-1 opacity-0 shadow-lg transition group-focus-within:visible group-focus-within:opacity-100 group-hover:visible group-hover:opacity-100 ${
-                    isDarkMode ? 'border-slate-700 bg-slate-900' : 'border-slate-200 bg-white'
+          {showReplyAction || showReactionPicker || visibleReactions.length > 0 ? (
+            <footer className="mt-3 flex items-center gap-3 text-xs">
+              {showReplyAction ? (
+                <button
+                  type="button"
+                  onClick={() => onReply?.({ replyToCommentId: commentId })}
+                  disabled={actionsDisabled || !onReply}
+                  className={`rounded-full px-2 py-1 font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                    isDarkMode ? 'text-slate-300 hover:bg-slate-800 hover:text-slate-100' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                   }`}
                 >
-                  {COMMENT_REACTION_OPTIONS.map((emoji) => {
-                    const hasReacted = viewerReactionEmojis?.has(emoji) ?? false;
+                  Reply
+                </button>
+              ) : null}
+              {showReactionPicker ? (
+                <div className="group relative flex items-center gap-1">
+                  <button
+                    type="button"
+                    aria-label="Add reaction"
+                    disabled={actionsDisabled || !onToggleReaction}
+                    onClick={() => {
+                      if (!viewerReactionEmojis?.has(COMMENT_REACTION_OPTIONS[0])) {
+                        onToggleReaction?.({ commentId, emoji: COMMENT_REACTION_OPTIONS[0], shouldAdd: true });
+                      }
+                    }}
+                    className={`flex h-8 w-8 items-center justify-center rounded-full text-base transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                      isDarkMode ? 'hover:bg-rose-950 active:bg-rose-900' : 'hover:bg-rose-50 active:bg-rose-100'
+                    }`}
+                  >
+                    <span aria-hidden="true">{COMMENT_REACTION_OPTIONS[0]}</span>
+                  </button>
+                  {onToggleReaction ? (
+                    <div
+                      className={`invisible absolute bottom-8 left-0 z-20 flex gap-1 rounded-full border p-1 opacity-0 shadow-lg transition group-focus-within:visible group-focus-within:opacity-100 group-hover:visible group-hover:opacity-100 ${
+                        isDarkMode ? 'border-slate-700 bg-slate-900' : 'border-slate-200 bg-white'
+                      }`}
+                    >
+                      {COMMENT_REACTION_OPTIONS.map((emoji) => {
+                        const hasReacted = viewerReactionEmojis?.has(emoji) ?? false;
 
-                    return (
-                      <button
-                        key={emoji}
-                        type="button"
-                        aria-label={`${hasReacted ? 'Remove' : 'Add'} ${emoji} reaction`}
-                        disabled={actionsDisabled}
-                        onClick={() => onToggleReaction({ commentId, emoji, shouldAdd: !hasReacted })}
-                        className={`flex h-8 w-8 items-center justify-center rounded-full border text-base transition hover:scale-110 disabled:cursor-not-allowed disabled:opacity-60 ${
-                          hasReacted
-                            ? isDarkMode
-                              ? 'border-sky-400 bg-sky-950'
-                              : 'border-sky-500 bg-sky-50'
-                            : 'border-transparent'
-                        }`}
-                      >
-                        <span aria-hidden="true">{emoji}</span>
-                      </button>
-                    );
-                  })}
+                        return (
+                          <button
+                            key={emoji}
+                            type="button"
+                            aria-label={`${hasReacted ? 'Remove' : 'Add'} ${emoji} reaction`}
+                            disabled={actionsDisabled}
+                            onClick={() => onToggleReaction({ commentId, emoji, shouldAdd: !hasReacted })}
+                            className={`flex h-8 w-8 items-center justify-center rounded-full border text-base transition hover:scale-110 disabled:cursor-not-allowed disabled:opacity-60 ${
+                              hasReacted
+                                ? isDarkMode
+                                  ? 'border-sky-400 bg-sky-950'
+                                  : 'border-sky-500 bg-sky-50'
+                                : 'border-transparent'
+                            }`}
+                          >
+                            <span aria-hidden="true">{emoji}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
-            </div>
-            {visibleReactions.map(({ emoji, count }) => {
-              const hasReacted = viewerReactionEmojis?.has(emoji) ?? false;
+              {visibleReactions.map(({ emoji, count }) => {
+                const hasReacted = viewerReactionEmojis?.has(emoji) ?? false;
 
-              return (
-                <button
-                  key={emoji}
-                  type="button"
-                  aria-label={`${hasReacted ? 'Remove' : 'Add'} ${emoji} reaction`}
-                  disabled={actionsDisabled || !onToggleReaction}
-                  onClick={() => onToggleReaction?.({ commentId, emoji, shouldAdd: !hasReacted })}
-                  className={`rounded-full border px-2 py-1 transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-                    hasReacted
-                      ? isDarkMode
-                        ? 'border-sky-400 bg-sky-950 text-sky-100'
-                        : 'border-sky-500 bg-sky-50 text-sky-900'
-                      : isDarkMode
-                        ? 'border-slate-700 text-slate-300 enabled:hover:bg-slate-800'
-                        : 'border-slate-200 text-slate-600 enabled:hover:bg-slate-100'
-                  }`}
-                >
-                  {emoji} {count}
-                </button>
-              );
-            })}
-          </footer>
+                return (
+                  <button
+                    key={emoji}
+                    type="button"
+                    aria-label={`${hasReacted ? 'Remove' : 'Add'} ${emoji} reaction`}
+                    disabled={actionsDisabled || !onToggleReaction}
+                    onClick={() => onToggleReaction?.({ commentId, emoji, shouldAdd: !hasReacted })}
+                    className={`rounded-full border px-2 py-1 transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                      hasReacted
+                        ? isDarkMode
+                          ? 'border-sky-400 bg-sky-950 text-sky-100'
+                          : 'border-sky-500 bg-sky-50 text-sky-900'
+                        : isDarkMode
+                          ? 'border-slate-700 text-slate-300 enabled:hover:bg-slate-800'
+                          : 'border-slate-200 text-slate-600 enabled:hover:bg-slate-100'
+                    }`}
+                  >
+                    {emoji} {count}
+                  </button>
+                );
+              })}
+            </footer>
+          ) : null}
         </>
       )}
     </article>

@@ -253,7 +253,7 @@ const WebsiteHeader = ({
                     <path d="M13.73 21a2 2 0 0 1-3.46 0" />
                   </svg>
                   {notificationUnreadCount > 0 ? (
-                    <span className="absolute -right-2 -top-2 min-w-5 rounded-full bg-white px-1 text-xs font-bold text-[#872341]">
+                    <span className="absolute -bottom-2 -right-2 min-w-5 rounded-full bg-white px-1 text-xs font-bold text-[#872341]">
                       {notificationUnreadCount > 99 ? '99+' : notificationUnreadCount}
                     </span>
                   ) : null}
