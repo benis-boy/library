@@ -9,6 +9,8 @@ const DEFAULT_NOTIFICATION_LIMIT = 5;
 const MAX_NOTIFICATION_LIMIT = 20;
 const NOTIFICATION_CLEANUP_KEEP_NEWEST = 10;
 const NOTIFICATION_CLEANUP_MAX_AGE_MS = 180 * 24 * 60 * 60 * 1000;
+const NOTIFICATIONS_ADMIN_PATREON_USER_ID = '101723637';
+const SELF_REPLY_NOTIFICATIONS_SIGNED_USER = '__self-reply-admin-feed__';
 
 const headers = {
   'Access-Control-Allow-Origin': '*',
@@ -207,6 +209,10 @@ const doMutationOwnersMatch = (left, right) => {
     left.patreonUserId === right.patreonUserId &&
     safeEqual(left.signedUser, right.signedUser)
   );
+};
+
+const isNotificationsAdmin = (mutationOwner) => {
+  return mutationOwner !== null && mutationOwner.patreonUserId === NOTIFICATIONS_ADMIN_PATREON_USER_ID;
 };
 
 const getMutationAuthError = (mutationOwner) => {
@@ -559,6 +565,14 @@ const getNotificationSummary = async (signedUser) => {
   return { unreadCount, lastCheckedAt };
 };
 
+const getAllNotificationSummary = async (signedUser) => {
+  const lastCheckedAt = await getNotificationLastCheckedAt(signedUser);
+  const notificationUsers = await redisSetMembers(toNotificationUsersRedisKey());
+  const unreadCounts = await Promise.all(notificationUsers.map((notificationUser) => getNotificationUnreadCount(notificationUser, lastCheckedAt)));
+  const unreadCount = unreadCounts.reduce((sum, count) => sum + count, 0);
+  return { unreadCount, lastCheckedAt };
+};
+
 const getNotificationsList = async (signedUser, options = {}) => {
   const limit = Math.min(Math.max(Number(options.limit) || DEFAULT_NOTIFICATION_LIMIT, 1), MAX_NOTIFICATION_LIMIT);
   const before = Number(options.before);
@@ -567,6 +581,31 @@ const getNotificationsList = async (signedUser, options = {}) => {
   const parsedItems = (Array.isArray(rawItems) ? rawItems : []).map(parseNotification).filter((item) => item !== null);
   const items = parsedItems.slice(0, limit);
   const summary = await getNotificationSummary(signedUser);
+
+  return {
+    items,
+    ...summary,
+    nextCursor: parsedItems.length > limit && items.length > 0 ? items[items.length - 1].createdAt : null,
+  };
+};
+
+const getAllNotificationsList = async (signedUser, options = {}) => {
+  const limit = Math.min(Math.max(Number(options.limit) || DEFAULT_NOTIFICATION_LIMIT, 1), MAX_NOTIFICATION_LIMIT);
+  const before = Number(options.before);
+  const maxScore = Number.isFinite(before) && before > 0 ? `(${before}` : '+inf';
+  const notificationUsers = await redisSetMembers(toNotificationUsersRedisKey());
+  const rawItemGroups = await Promise.all(
+    notificationUsers.map((notificationUser) =>
+      redisCommand(['ZREVRANGEBYSCORE', toUserNotificationsRedisKey(notificationUser), maxScore, '-inf', 'LIMIT', 0, limit + 1])
+    )
+  );
+  const parsedItems = rawItemGroups
+    .flatMap((rawItems) => (Array.isArray(rawItems) ? rawItems : []))
+    .map(parseNotification)
+    .filter((item) => item !== null)
+    .sort((left, right) => right.createdAt - left.createdAt || left.id.localeCompare(right.id));
+  const items = parsedItems.slice(0, limit);
+  const summary = await getAllNotificationSummary(signedUser);
 
   return {
     items,
@@ -593,6 +632,22 @@ const storeReplyNotification = async ({ recipientOwner, actorOwner, locationId, 
   await redisSetAdd(toNotificationUsersRedisKey(), recipientOwner.signedUser);
 };
 
+const storeSelfReplyNotification = async ({ actorOwner, locationId, parentCommentId, replyCommentId }) => {
+  const createdAt = Date.now();
+  const notification = {
+    id: createNotificationId(createdAt),
+    type: 'comment-reply',
+    createdAt,
+    actorUserName: actorOwner?.userName ?? null,
+    locationId,
+    parentCommentId,
+    replyCommentId,
+  };
+
+  await redisCommand(['ZADD', toUserNotificationsRedisKey(SELF_REPLY_NOTIFICATIONS_SIGNED_USER), createdAt, JSON.stringify(notification)]);
+  await redisSetAdd(toNotificationUsersRedisKey(), SELF_REPLY_NOTIFICATIONS_SIGNED_USER);
+};
+
 const maybeCreateReplyNotification = async ({ wasNewComment, previousThread, mutation, mutationOwner }) => {
   if (!wasNewComment) {
     return;
@@ -600,7 +655,17 @@ const maybeCreateReplyNotification = async ({ wasNewComment, previousThread, mut
 
   const parentComment = previousThread.commentsById?.[mutation.replyingTo];
   const parentOwner = parentComment?.mutationOwner ?? null;
-  if (!parentComment || !parentOwner || !isVerifiedMutationOwner(parentOwner) || doMutationOwnersMatch(parentOwner, mutationOwner)) {
+  if (!parentComment || !parentOwner || !isVerifiedMutationOwner(parentOwner)) {
+    return;
+  }
+
+  if (doMutationOwnersMatch(parentOwner, mutationOwner)) {
+    await storeSelfReplyNotification({
+      actorOwner: mutationOwner,
+      locationId: previousThread.locationId,
+      parentCommentId: mutation.replyingTo,
+      replyCommentId: mutation.commentId,
+    });
     return;
   }
 
@@ -789,16 +854,18 @@ const handleGet = async (event) => {
       return json(401, { error: 'Invalid notification auth.' });
     }
 
+    const isAdmin = isNotificationsAdmin(owner);
+
     if (query.notifications === 'summary') {
-      return json(200, await getNotificationSummary(owner.signedUser));
+      return json(200, await (isAdmin ? getAllNotificationSummary(owner.signedUser) : getNotificationSummary(owner.signedUser)));
     }
 
     return json(
       200,
-      await getNotificationsList(owner.signedUser, {
+      await (isAdmin ? getAllNotificationsList(owner.signedUser, { before: query.before, limit: query.limit }) : getNotificationsList(owner.signedUser, {
         before: query.before,
         limit: query.limit,
-      })
+      }))
     );
   }
 
@@ -880,10 +947,15 @@ const handlePost = async (event) => {
 
     const lastCheckedAt = Date.now();
     await redisSet(toUserNotificationsLastCheckedRedisKey(mutationOwner.signedUser), lastCheckedAt);
-    return json(200, {
-      lastCheckedAt,
-      unreadCount: await getNotificationUnreadCount(mutationOwner.signedUser, lastCheckedAt),
-    });
+    return json(
+      200,
+      isNotificationsAdmin(mutationOwner)
+        ? await getAllNotificationSummary(mutationOwner.signedUser)
+        : {
+            lastCheckedAt,
+            unreadCount: await getNotificationUnreadCount(mutationOwner.signedUser, lastCheckedAt),
+          }
+    );
   }
 
   if (request?.notificationAction === 'cleanup') {
