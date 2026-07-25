@@ -274,6 +274,7 @@
     "a:benisboy14": "BenisBoy14",
     "a:skeleion": "Skeleion",
     "a:unknown": "Unknown",
+    "s:pokemon": "Pokémon",
     "c:cynthia": "Cynthia",
     "c:lopunny": "Lopunny",
     "c:lucario": "Lucario",
@@ -282,7 +283,6 @@
     "easter": "Easter",
     "halloween": "Halloween",
     "nsfw": "Nsfw",
-    "s:pokemon": "Pokémon",
     "wallpaper": "Wallpaper"
   }
 }
