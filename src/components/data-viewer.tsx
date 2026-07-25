@@ -181,53 +181,105 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
     let cancelled = false;
     let frameId: number | undefined;
     let timeoutId: number | undefined;
-    let attempts = 0;
-    let stableHeightFrames = 0;
-    let previousScrollHeight = -1;
+    let lastAppliedScrollTop: number | null = null;
 
     const restore = () => {
       if (cancelled) {
         return;
       }
 
-      const iframeHeight = iframeRef.current?.getBoundingClientRect().height ?? 0;
-      const maxScrollTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
-      if (previousScrollHeight === scroller.scrollHeight) {
-        stableHeightFrames += 1;
-      } else {
-        stableHeightFrames = 0;
-        previousScrollHeight = scroller.scrollHeight;
-      }
-
-      const hasSettledHeight = accessDeniedReason || (iframeHeight > 0 && attempts >= 6 && stableHeightFrames >= 2) || attempts >= 20;
-
-      if (!hasSettledHeight) {
-        attempts += 1;
-        timeoutId = window.setTimeout(() => {
-          frameId = window.requestAnimationFrame(restore);
-        }, 50);
+      const currentScroller = scrollerRef.current;
+      if (!currentScroller) {
         return;
       }
+
+      const iframeHeight = iframeRef.current?.getBoundingClientRect().height ?? 0;
+      if (!accessDeniedReason && iframeHeight <= 0) {
+        return;
+      }
+
+      const maxScrollTop = Math.max(0, currentScroller.scrollHeight - currentScroller.clientHeight);
 
       const stored = getReaderScroll(routeInfo.book);
       let top = 0;
       if (stored?.chapter === routeInfo.chapter) {
         const savedMaxScrollTop = Math.max(1, stored.scrollHeight - stored.clientHeight);
-        const heightDelta = Math.abs(scroller.scrollHeight - stored.scrollHeight);
+        const heightDelta = Math.abs(currentScroller.scrollHeight - stored.scrollHeight);
         top = heightDelta > 8 ? (stored.scrollTop / savedMaxScrollTop) * maxScrollTop : stored.scrollTop;
       }
 
-      scroller.scrollTo({
-        top: Math.min(Math.max(0, top), maxScrollTop),
+      const clampedTop = Math.min(Math.max(0, top), maxScrollTop);
+
+      currentScroller.scrollTo({
+        top: clampedTop,
         behavior: 'auto',
       });
+
+      lastAppliedScrollTop = clampedTop;
       lastRestoredReaderKeyRef.current = readerKey;
     };
 
-    frameId = window.requestAnimationFrame(restore);
+    const scheduleRestore = () => {
+      if (cancelled) {
+        return;
+      }
+
+      if (frameId !== undefined) {
+        window.cancelAnimationFrame(frameId);
+      }
+
+      frameId = window.requestAnimationFrame(() => {
+        frameId = undefined;
+        restore();
+      });
+    };
+
+    const scheduleFollowUpRestore = () => {
+      if (cancelled) {
+        return;
+      }
+
+      if (timeoutId !== undefined) {
+        window.clearTimeout(timeoutId);
+      }
+
+      timeoutId = window.setTimeout(() => {
+        timeoutId = undefined;
+
+        const currentScroller = scrollerRef.current;
+        if (!currentScroller || lastAppliedScrollTop === null) {
+          return;
+        }
+
+        if (Math.abs(currentScroller.scrollTop - lastAppliedScrollTop) > 2) {
+          return;
+        }
+
+        scheduleRestore();
+      }, 350);
+    };
+
+    const handleIframeReady = () => {
+      scheduleRestore();
+      scheduleFollowUpRestore();
+    };
+
+    const iframe = iframeRef.current;
+    if (accessDeniedReason) {
+      scheduleRestore();
+    } else if (iframe) {
+      iframe.addEventListener('load', handleIframeReady);
+
+      if (iframe.contentDocument?.readyState === 'complete') {
+        handleIframeReady();
+      }
+    }
 
     return () => {
       cancelled = true;
+      if (iframe) {
+        iframe.removeEventListener('load', handleIframeReady);
+      }
       if (frameId !== undefined) {
         window.cancelAnimationFrame(frameId);
       }
