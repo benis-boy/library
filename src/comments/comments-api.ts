@@ -34,6 +34,12 @@ export type FetchThreadLocationThreadsResponse = {
 
 type RawFetchPageThreadsResponse = Omit<FetchPageThreadsResponse, 'threads'>;
 
+type FetchPageCommentSummaryResponse = {
+  pageLocationId: PageLocationId;
+  lineThreadKeys: string[];
+  commentCountsByThreadKey?: Record<string, number>;
+};
+
 export type FetchCommentReactionsResponse = {
   reactionsByCommentId?: Record<CommentId, CommentReactions>;
   likedUserNamesByCommentId?: Record<CommentId, string[]>;
@@ -103,10 +109,11 @@ export const fetchPageCommentSummary = async (pageLocationId: PageLocationId) =>
   const searchParams = new URLSearchParams({
     bookId: pageLocationId.bookId,
     chapterId: pageLocationId.chapterId,
+    summary: '1',
   });
 
   const response = await fetch(`${COMMENTS_FUNCTION_URL}?${searchParams.toString()}`);
-  const data = await parseJsonResponse<RawFetchPageThreadsResponse>(response);
+  const data = await parseJsonResponse<FetchPageCommentSummaryResponse>(response);
   return {
     pageLocationId: data.pageLocationId,
     lineThreadKeys: data.lineThreadKeys,

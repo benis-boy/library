@@ -28,12 +28,15 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
   const { isDarkMode, selectedFont, fontSize } = useContext(ConfigurationContext);
   const lContext = useContext(LibraryContext);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const chapterCommentsSentinelRef = useRef<HTMLDivElement | null>(null);
   const lastRestoredReaderKeyRef = useRef<string | null>(null);
   const [galleryMap, setGalleryMap] = useState<Record<string, { fullSrc: string }>>({});
   const [lightboxImageId, setLightboxImageId] = useState<string | null>(null);
   const [paragraphCommentLocation, setParagraphCommentLocation] = useState<ThreadLocationId | null>(null);
   const [paragraphCommentCounts, setParagraphCommentCounts] = useState<Record<number, number>>({});
   const [activeParagraphCommentCount, setActiveParagraphCommentCount] = useState(0);
+  const [isReaderFrameReady, setIsReaderFrameReady] = useState(false);
+  const [shouldLoadChapterComments, setShouldLoadChapterComments] = useState(false);
   const {
     libraryData: { content, selectedBook, selectedChapter, accessDeniedReason } = {
       content: '',
@@ -46,6 +49,10 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
   } = lContext || {};
 
   const baseUrl = import.meta.env.BASE_URL;
+
+  useEffect(() => {
+    setIsReaderFrameReady(accessDeniedReason !== null);
+  }, [accessDeniedReason, content, params.bookId, params.chapter]);
 
   useEffect(() => {
     let cancelled = false;
@@ -506,14 +513,56 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
     [paragraphCommentLocation]
   );
 
-  if (!lContext) return <Fragment />;
-
   const routeInfo = parseReaderRoute(params.bookId, params.chapter);
   const commentLocation: PageLocationId | null = routeInfo
     ? { bookId: routeInfo.book, chapterId: routeInfo.chapter }
     : selectedChapter
       ? { bookId: selectedBook, chapterId: selectedChapter }
       : null;
+  const chapterCommentLocationKey = commentLocation ? `${commentLocation.bookId}:${commentLocation.chapterId}` : null;
+
+  useEffect(() => {
+    setShouldLoadChapterComments(false);
+  }, [chapterCommentLocationKey]);
+
+  useEffect(() => {
+    if (shouldLoadChapterComments || !chapterCommentLocationKey || !isReaderFrameReady) {
+      return;
+    }
+
+    const sentinel = chapterCommentsSentinelRef.current;
+    const root = scrollerRef.current;
+    if (!sentinel || !root || !('IntersectionObserver' in window)) {
+      setShouldLoadChapterComments(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) {
+            continue;
+          }
+
+          setShouldLoadChapterComments(true);
+          observer.disconnect();
+          return;
+        }
+      },
+      {
+        root,
+        rootMargin: '800px 0px',
+        threshold: 0,
+      }
+    );
+
+    observer.observe(sentinel);
+    return () => {
+      observer.disconnect();
+    };
+  }, [chapterCommentLocationKey, isReaderFrameReady, scrollerRef, shouldLoadChapterComments]);
+
+  if (!lContext) return <Fragment />;
 
   const readerBody = accessDeniedReason ? (
     accessDeniedReason === 'login_required' ? (
@@ -527,6 +576,7 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
         ref={iframeRef}
         onLoad={() => {
           injectStyles(iframeRef, { isDarkMode, selectedFont, fontSize });
+          setIsReaderFrameReady(true);
           iframeRef.current?.contentWindow?.postMessage(
             {
               type: 'paragraph-comment-counts-updated',
@@ -586,7 +636,25 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
           </div>
         ) : null}
 
-        {commentLocation ? <CommentSection locationId={commentLocation} className="mt-8 mb-4" /> : null}
+        {commentLocation ? (
+          <>
+            <div ref={chapterCommentsSentinelRef} className="mt-8 h-px w-full" aria-hidden="true" />
+            {shouldLoadChapterComments ? (
+              <CommentSection locationId={commentLocation} className="mb-4" />
+            ) : (
+              <section
+                className={`mx-auto mb-4 w-full max-w-3xl rounded-2xl border px-4 py-5 ${
+                  isDarkMode ? 'border-slate-700 bg-slate-900' : 'border-slate-200 bg-slate-50'
+                }`}
+              >
+                <h2 className={`text-xl font-bold ${isDarkMode ? 'text-slate-100' : 'text-slate-950'}`}>Comments</h2>
+                <p className={`mt-2 text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+                  Comments load when this section gets near the viewport.
+                </p>
+              </section>
+            )}
+          </>
+        ) : null}
       </div>
 
       <ImageLightbox

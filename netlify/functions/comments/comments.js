@@ -430,7 +430,8 @@ const includesComment = (thread, commentId) => Boolean(thread.commentsById?.[com
 
 const isChapterThread = (thread) => thread.locationId?.paragraphLocation === undefined;
 
-const splitThreadKeysByLocation = async (threadKeys) => {
+const splitThreadKeysByLocation = async (threadKeys, options = {}) => {
+  const { includeChapterThreads = true } = options;
   const chapterThreads = [];
   const lineThreadKeys = [];
   const commentCountsByThreadKey = {};
@@ -438,6 +439,10 @@ const splitThreadKeysByLocation = async (threadKeys) => {
   await Promise.all(
     threadKeys.map(async (threadKey) => {
       if (!threadKey.includes(':paragraph:')) {
+        if (!includeChapterThreads) {
+          return;
+        }
+
         const thread = await getThreadByKey(threadKey);
         if (thread && isChapterThread(thread)) {
           chapterThreads.push(thread);
@@ -659,7 +664,18 @@ const handleGet = async (event) => {
     });
   }
 
-  const { chapterThreads, lineThreadKeys, commentCountsByThreadKey } = await splitThreadKeysByLocation(threadKeys);
+  const isSummaryRequest = query.summary === '1';
+  const { chapterThreads, lineThreadKeys, commentCountsByThreadKey } = await splitThreadKeysByLocation(threadKeys, {
+    includeChapterThreads: !isSummaryRequest,
+  });
+
+  if (isSummaryRequest) {
+    return json(200, {
+      pageLocationId,
+      lineThreadKeys,
+      commentCountsByThreadKey,
+    });
+  }
 
   return json(200, {
     pageLocationId,
