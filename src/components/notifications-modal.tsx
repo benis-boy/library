@@ -1,6 +1,7 @@
 import { useContext, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
+  CommentsForLocationResponse,
   CommentReplyNotification,
   fetchCommentsForLocations,
   fetchNotifications,
@@ -12,7 +13,7 @@ import { getReaderRoute } from '../context/LibraryContext';
 
 const PAGE_SIZE = 5;
 
-type NotificationDetails = Record<string, Record<string, Comment | null>>;
+type NotificationDetails = Record<string, CommentsForLocationResponse>;
 
 const formatRelativeTime = (timestamp: number) => {
   const elapsedMs = Math.max(0, Date.now() - timestamp);
@@ -180,8 +181,10 @@ export const NotificationsModal = ({
           <div className="space-y-3">
             {items.map((notification) => {
               const locationKey = toThreadLocationKey(notification.locationId);
-              const parent = details[locationKey]?.[notification.parentCommentId];
-              const reply = details[locationKey]?.[notification.replyCommentId];
+              const locationDetails = details[locationKey];
+              const parent = locationDetails?.commentsById[notification.parentCommentId];
+              const reply = locationDetails?.commentsById[notification.replyCommentId];
+              const isMissingThread = locationDetails?.threadExists === false && parent === null && reply === null;
               const isNew = notification.createdAt > initialUnreadCutoff;
 
               return (
@@ -201,12 +204,18 @@ export const NotificationsModal = ({
                     <span>{notification.actorUserName ?? 'Anonymous'} replied</span>
                     <time dateTime={new Date(notification.createdAt).toISOString()}>{formatRelativeTime(notification.createdAt)}</time>
                   </div>
-                  <div className="rounded-xl border border-current/10 p-2 opacity-80">
-                    <CommentText comment={parent} missingText="Original comment no longer exists." compact />
-                  </div>
-                  <div className="mt-2 rounded-xl border border-current/10 p-2">
-                    <CommentText comment={reply} missingText="Reply no longer exists." />
-                  </div>
+                  {isMissingThread ? (
+                    <div className="rounded-xl border border-current/10 p-3 text-sm italic opacity-80">Thread no longer exists.</div>
+                  ) : (
+                    <>
+                      <div className="rounded-xl border border-current/10 p-2 opacity-80">
+                        <CommentText comment={parent} missingText="Original comment no longer exists." compact />
+                      </div>
+                      <div className="mt-2 rounded-xl border border-current/10 p-2">
+                        <CommentText comment={reply} missingText="Reply no longer exists." />
+                      </div>
+                    </>
+                  )}
                   <button type="button" className="mt-3 rounded-full bg-[#BE3144] px-4 py-2 text-sm font-semibold text-white" onClick={() => goToThread(notification)}>
                     Go to thread
                   </button>

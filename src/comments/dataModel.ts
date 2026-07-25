@@ -33,6 +33,7 @@ export const COMMENT_MEDIA_URL_MAX_LENGTH = 2048;
 
 export type MutationOwner = {
   userName: string;
+  patreonUserId: string;
   signedUser: string;
 } | null;
 

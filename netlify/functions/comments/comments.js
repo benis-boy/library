@@ -12,7 +12,7 @@ const NOTIFICATION_CLEANUP_MAX_AGE_MS = 180 * 24 * 60 * 60 * 1000;
 
 const headers = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Comment-User-Name',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Comment-User-Name, X-Comment-User-Id',
   'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
 };
 
@@ -136,7 +136,8 @@ const getCommentsAuthSecret = () => {
   return secret;
 };
 
-const signUserName = (userName) => crypto.createHmac('sha256', getCommentsAuthSecret()).update(userName).digest('base64url');
+const signPatreonUserId = (patreonUserId) =>
+  crypto.createHmac('sha256', getCommentsAuthSecret()).update(patreonUserId).digest('base64url');
 
 const safeEqual = (left, right) => {
   const leftBuffer = Buffer.from(left);
@@ -149,13 +150,15 @@ const isMutationOwner = (value) => {
     value === null ||
     (typeof value?.userName === 'string' &&
       value.userName.length > 0 &&
+      typeof value?.patreonUserId === 'string' &&
+      value.patreonUserId.length > 0 &&
       typeof value?.signedUser === 'string' &&
       value.signedUser.length > 0)
   );
 };
 
 const isVerifiedMutationOwner = (mutationOwner) => {
-  return mutationOwner !== null && safeEqual(signUserName(mutationOwner.userName), mutationOwner.signedUser);
+  return mutationOwner !== null && safeEqual(signPatreonUserId(mutationOwner.patreonUserId), mutationOwner.signedUser);
 };
 
 const getVerifiedMutationOwner = (mutationOwner) => {
@@ -169,6 +172,7 @@ const getVerifiedMutationOwner = (mutationOwner) => {
 
   return {
     userName: mutationOwner.userName,
+    patreonUserId: mutationOwner.patreonUserId,
     signedUser: mutationOwner.signedUser,
   };
 };
@@ -184,19 +188,25 @@ const getBearerToken = (authorization) => {
 
 const getNotificationAuth = (event) => {
   const headerUserName = event.headers?.['x-comment-user-name'] ?? event.headers?.['X-Comment-User-Name'];
+  const headerUserId = event.headers?.['x-comment-user-id'] ?? event.headers?.['X-Comment-User-Id'];
   const authorization = event.headers?.authorization ?? event.headers?.Authorization;
   const signedUser = getBearerToken(authorization);
 
-  if (typeof headerUserName !== 'string' || headerUserName.length === 0 || !signedUser) {
+  if (typeof headerUserName !== 'string' || headerUserName.length === 0 || typeof headerUserId !== 'string' || headerUserId.length === 0 || !signedUser) {
     return null;
   }
 
-  const mutationOwner = { userName: headerUserName, signedUser };
+  const mutationOwner = { userName: headerUserName, patreonUserId: headerUserId, signedUser };
   return isVerifiedMutationOwner(mutationOwner) ? mutationOwner : null;
 };
 
 const doMutationOwnersMatch = (left, right) => {
-  return left !== null && right !== null && left.userName === right.userName && safeEqual(left.signedUser, right.signedUser);
+  return (
+    left !== null &&
+    right !== null &&
+    left.patreonUserId === right.patreonUserId &&
+    safeEqual(left.signedUser, right.signedUser)
+  );
 };
 
 const getMutationAuthError = (mutationOwner) => {

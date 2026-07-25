@@ -48,7 +48,7 @@ const keys = {
   auth: {
     patreonToken: 'patreon_token',
     pendingPatreonLogin: 'PENDING_PATREON_LOGIN',
-    forceRelogin: 'forceRelogin_2025_07',
+    forceRelogin: 'forceRelogin_2026_07_patreonUserId',
   },
   gallery: {
     lastVisitedAt: 'gallery:last-visited-at',

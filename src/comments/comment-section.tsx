@@ -41,10 +41,6 @@ export type CommentSectionProps = {
   onCommentCountChange?: (commentCount: number) => void;
 };
 
-const isLocalLibraryUrl = () => {
-  return window.location.origin === 'http://localhost:5173' && window.location.pathname === '/library/';
-};
-
 const createCommentId = () => {
   const randomPart = Math.random().toString(36).slice(2, 10);
   return `comment-${Date.now().toString(36)}-${randomPart}`;
@@ -397,17 +393,10 @@ export const CommentSection = ({
   const { isDarkMode } = useContext(ConfigurationContext);
   const pageLocationId = useMemo(() => normalizePageLocation(locationId), [locationId]);
   const locationLoadKey = useMemo(() => getLocationLoadCacheKey(locationId, null), [locationId]);
-  const signedInUserName = isLocalLibraryUrl()
-    ? 'B. Warnecke'
-    : patreonContext?.isLoggedIn
-      ? (patreonContext.userInfo?.userName ?? null)
-      : null;
-  const signedUser = isLocalLibraryUrl()
-    ? (import.meta.env.VITE_LOCAL_ADMIN_SIGNED ?? null)
-    : patreonContext?.isLoggedIn
-      ? (patreonContext?.signedUser ?? null)
-      : null;
-  const canUseSignedIdentity = signedInUserName !== null && signedUser !== null;
+  const signedInUserName = patreonContext?.isLoggedIn ? (patreonContext.userInfo?.userName ?? null) : null;
+  const patreonUserId = patreonContext?.isLoggedIn ? (patreonContext?.patreonUserId ?? null) : null;
+  const signedUser = patreonContext?.isLoggedIn ? (patreonContext?.signedUser ?? null) : null;
+  const canUseSignedIdentity = signedInUserName !== null && patreonUserId !== null && signedUser !== null;
   const forceAnonymous = !canUseSignedIdentity;
   const [threads, setThreads] = useState<Thread[]>([]);
   const [reactionsByCommentId, setReactionsByCommentId] = useState<Record<CommentId, CommentReactions>>({});
@@ -417,6 +406,7 @@ export const CommentSection = ({
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [temporaryHighlightedCommentId, setTemporaryHighlightedCommentId] = useState<CommentId | null>(null);
   const syncedReactionsByCommentIdRef = useRef<Record<CommentId, CommentReactions>>({});
   const pendingReactionEmojisByCommentIdRef = useRef(new Map<CommentId, Set<string>>());
   const reactionDebounceTimersRef = useRef(new Map<CommentId, number>());
@@ -518,11 +508,11 @@ export const CommentSection = ({
   };
 
   const getMutationOwner = (commentAnonymously = false): MutationOwner => {
-    if (commentAnonymously || !signedInUserName || !signedUser) {
+    if (commentAnonymously || !signedInUserName || !patreonUserId || !signedUser) {
       return null;
     }
 
-    return { userName: signedInUserName, signedUser };
+    return { userName: signedInUserName, patreonUserId, signedUser };
   };
 
   const handleStartThread = async (text: string, commentAnonymously: boolean, imageUrl: string | null) => {
@@ -775,7 +765,7 @@ export const CommentSection = ({
         pageLocationIdRef.current,
         {
           type: 'set-comment-reactions',
-          mutationOwner: { userName, signedUser: signedUser ?? '' },
+          mutationOwner: { userName, patreonUserId: patreonUserId ?? '', signedUser: signedUser ?? '' },
           commentId,
           emojis: desiredEmojis,
           userName,
@@ -805,12 +795,20 @@ export const CommentSection = ({
       return;
     }
 
+    setTemporaryHighlightedCommentId(highlightedCommentId);
     const frameId = window.requestAnimationFrame(() => {
       const element = document.querySelector(`[data-comment-id="${CSS.escape(highlightedCommentId)}"]`);
       element?.scrollIntoView({ block: 'center', behavior: 'smooth' });
     });
 
-    return () => window.cancelAnimationFrame(frameId);
+    const timeoutId = window.setTimeout(() => {
+      setTemporaryHighlightedCommentId((currentCommentId) => (currentCommentId === highlightedCommentId ? null : currentCommentId));
+    }, 4500);
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      window.clearTimeout(timeoutId);
+    };
   }, [highlightedCommentId, isLoading, threads]);
 
   return (
@@ -847,7 +845,7 @@ export const CommentSection = ({
             key={thread.rootCommentId}
             thread={thread}
             signedInUserName={signedInUserName}
-            highlightedCommentId={highlightedCommentId}
+            highlightedCommentId={temporaryHighlightedCommentId ?? undefined}
             reactionsByCommentId={reactionsByCommentId}
             actionsDisabled={isSubmitting}
             onReply={({ replyToCommentId }) => {
@@ -869,7 +867,7 @@ export const CommentSection = ({
                     embedded
                     forceAnonymous={forceAnonymous}
                     initialText={findComment(commentId)?.comment.text ?? ''}
-                    initialImageUrl={findComment(commentId)?.comment.imageUrl ?? null}
+                    initialImageUrl={findComment(commentId)?.comment.imageUrl ?? undefined}
                     placeholder="Edit your comment..."
                     submitLabel="Comment"
                     onCancel={() => setEditingCommentId(null)}

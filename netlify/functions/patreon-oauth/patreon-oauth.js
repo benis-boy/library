@@ -9,7 +9,8 @@ const getCommentsAuthSecret = () => {
   return secret;
 };
 
-const signUserName = (userName) => crypto.createHmac('sha256', getCommentsAuthSecret()).update(userName).digest('base64url');
+const signPatreonUserId = (patreonUserId) =>
+  crypto.createHmac('sha256', getCommentsAuthSecret()).update(patreonUserId).digest('base64url');
 
 exports.handler = async (event, context) => {
   // Allow CORS requests from any origin
@@ -121,6 +122,11 @@ exports.handler = async (event, context) => {
       }
       const userInfo = await userDataResponse.json();
 
+      const patreonUserId = userInfo?.data?.id;
+      if (typeof patreonUserId !== 'string' || patreonUserId.length === 0) {
+        throw new Error('Failed to find stable Patreon user id.');
+      }
+
       const userName = userInfo.data.attributes.vanity ?? userInfo.data.attributes.full_name ?? 'CouldNotFindName';
       const generalMemberData = userInfo.included.filter((something) => something.type === 'member');
       const myMemberData = generalMemberData.find(
@@ -138,7 +144,7 @@ exports.handler = async (event, context) => {
           (everPaidAnything && isAugust),
         currently_entitled_tiers: myMemberData?.relationships?.currently_entitled_tiers,
       };
-      const signedUser = signUserName(userName);
+      const signedUser = signPatreonUserId(patreonUserId);
 
       if (filteredMembershipData.supportsMe) {
         encryption_passwordv2.WtDR = wtdrSecret;
@@ -151,6 +157,7 @@ exports.handler = async (event, context) => {
         headers,
         body: JSON.stringify({
           ...token,
+          patreonUserId,
           userInfo: filteredMembershipData,
           signedUser,
           membershipData: myMemberData,

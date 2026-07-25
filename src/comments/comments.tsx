@@ -9,8 +9,7 @@ import {
 import { ImageLightbox } from '../components/gallery/ImageLightbox';
 import { ConfigurationContext } from '../context/ConfigurationContext';
 import { ThreadGraphIssue, buildThreadGraph, getOrphanRootCommentIds } from './graph-utils';
-
-export const COMMENT_REACTION_OPTIONS = ['❤️', '👍', '👎', '😂'] as const;
+import { COMMENT_REACTION_OPTIONS } from './reaction-options';
 
 type ReplyAction = {
   replyToCommentId: CommentId;
@@ -33,7 +32,8 @@ export type CommentProps = {
   comment: CommentModel;
   reactions: Record<string, string[]>;
   viewerReactionEmojis?: ReadonlySet<string>;
-  highlighted?: boolean;
+  isOwnComment?: boolean;
+  isTargetHighlighted?: boolean;
   isDisconnected?: boolean;
   actionsDisabled?: boolean;
   formatTimestamp?: (timestamp: TimestampMs) => string;
@@ -101,7 +101,8 @@ export const Comment = ({
   comment,
   reactions,
   viewerReactionEmojis,
-  highlighted = false,
+  isOwnComment = false,
+  isTargetHighlighted = false,
   isDisconnected = false,
   actionsDisabled = false,
   formatTimestamp = formatRelativeTimestamp,
@@ -123,10 +124,14 @@ export const Comment = ({
   const visibleReactions = COMMENT_REACTION_OPTIONS.map((emoji) => ({ emoji, count: reactions[emoji]?.length ?? 0 })).filter(
     (reaction) => reaction.count > 0
   );
-  const articleClass = highlighted
+  const articleClass = isTargetHighlighted
     ? isDarkMode
-      ? 'border-sky-700 bg-sky-950 shadow-sky-950/40'
-      : 'border-sky-300 bg-sky-50 shadow-sky-100'
+      ? 'border-cyan-400 bg-cyan-950/70 shadow-cyan-950/50 ring-2 ring-cyan-400/70'
+      : 'border-cyan-500 bg-cyan-50 shadow-cyan-100 ring-2 ring-cyan-300'
+    : isOwnComment
+      ? isDarkMode
+        ? 'border-sky-700/80 bg-sky-950/35 shadow-sky-950/20'
+        : 'border-sky-200 bg-sky-50/70 shadow-sky-100/60'
     : isDisconnected
       ? isDarkMode
         ? 'border-orange-700 bg-orange-950'
@@ -428,7 +433,6 @@ export const Thread = ({
     const childIds = graph.treeChildIdsById.get(commentId) ?? [];
     const nextBranch = new Set(branch);
     nextBranch.add(commentId);
-    const shouldHighlight = Boolean((signedInUserName && comment.userName === signedInUserName) || commentId === highlightedCommentId);
     const canEdit = Boolean(signedInUserName && comment.userName === signedInUserName);
     const canDelete = canEdit;
     const reactions = reactionsByCommentId[commentId] ?? {};
@@ -447,7 +451,6 @@ export const Thread = ({
           comment={comment}
           reactions={reactions}
           viewerReactionEmojis={viewerReactionEmojis}
-          highlighted={shouldHighlight}
           isDisconnected={isDisconnected}
           actionsDisabled={actionsDisabled}
           formatTimestamp={formatTimestamp}
@@ -457,6 +460,8 @@ export const Thread = ({
           onEdit={canEdit ? onEdit : undefined}
           onDelete={canDelete ? onDelete : undefined}
           onImageClick={(src, alt) => setLightboxImage({ src, alt })}
+          isOwnComment={Boolean(signedInUserName && comment.userName === signedInUserName)}
+          isTargetHighlighted={commentId === highlightedCommentId}
           editor={renderCommentEditor?.(commentId)}
         />
         {renderAfterComment?.(commentId)}

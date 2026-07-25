@@ -39,6 +39,7 @@ export const MockPatreonProvider = ({
           : null,
         isLoggedIn,
         isSupporter: loggedInSupporter,
+        patreonUserId: isLoggedIn ? 'storybook-user-id' : null,
         signedUser: isLoggedIn ? 'storybook-signed-user' : null,
         encryptionPassword,
         encryptionPasswordV2: {

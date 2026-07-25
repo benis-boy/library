@@ -46,11 +46,15 @@ const WebsiteHeader = ({
   }, [isHeaderVisible]);
 
   const isLoggedIn = pContext?.isLoggedIn ?? false;
+  const patreonUserId = pContext?.patreonUserId ?? null;
   const userInfo = pContext?.userInfo ?? null;
   const signedUser = pContext?.signedUser ?? null;
   const notificationOwner = useMemo(
-    () => (isLoggedIn && userInfo?.userName && signedUser ? { userName: userInfo.userName, signedUser } : null),
-    [isLoggedIn, signedUser, userInfo?.userName]
+    () =>
+      isLoggedIn && userInfo?.userName && patreonUserId && signedUser
+        ? { userName: userInfo.userName, patreonUserId, signedUser }
+        : null,
+    [isLoggedIn, patreonUserId, signedUser, userInfo?.userName]
   );
 
   useEffect(() => {

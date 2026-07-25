@@ -81,6 +81,11 @@ export type NotificationsListResponse = {
   nextCursor: number | null;
 };
 
+export type CommentsForLocationResponse = {
+  commentsById: Record<CommentId, Comment | null>;
+  threadExists: boolean;
+};
+
 const COMMENTS_FUNCTION_URL = 'https://mellow-kitsune-6578b2.netlify.app/.netlify/functions/comments';
 const DEFAULT_REACTION_EMOJI = '❤️';
 
@@ -136,6 +141,7 @@ const getNotificationHeaders = (owner: MutationOwner) => {
   return {
     Authorization: `Bearer ${signedOwner.signedUser}`,
     'X-Comment-User-Name': signedOwner.userName,
+    'X-Comment-User-Id': signedOwner.patreonUserId,
   };
 };
 
@@ -237,7 +243,7 @@ export const markNotificationsChecked = async (owner: MutationOwner): Promise<No
 
 export const fetchCommentsForLocations = async (
   requests: { locationId: ThreadLocationId; commentIds: CommentId[] }[]
-): Promise<Record<string, Record<CommentId, Comment | null>>> => {
+): Promise<Record<string, CommentsForLocationResponse>> => {
   const requestsByLocationKey = new Map<string, { locationId: ThreadLocationId; commentIds: Set<CommentId> }>();
 
   for (const request of requests) {
@@ -277,7 +283,13 @@ export const fetchCommentsForLocations = async (
         }
       }
 
-      return [locationKey, commentsById] as const;
+      return [
+        locationKey,
+        {
+          commentsById,
+          threadExists: threadsResponse.threads.length > 0,
+        },
+      ] as const;
     })
   );
 

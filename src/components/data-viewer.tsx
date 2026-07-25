@@ -38,6 +38,7 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
   const [activeParagraphCommentCount, setActiveParagraphCommentCount] = useState(0);
   const [isReaderFrameReady, setIsReaderFrameReady] = useState(false);
   const [shouldLoadChapterComments, setShouldLoadChapterComments] = useState(false);
+  const lastRouteKeyRef = useRef<string | null>(null);
   const {
     libraryData: { content, selectedBook, selectedChapter, accessDeniedReason } = {
       content: '',
@@ -50,7 +51,7 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
   } = lContext || {};
 
   const baseUrl = import.meta.env.BASE_URL;
-  const commentTarget = useMemo(() => {
+  const parsedCommentTarget = useMemo(() => {
     const searchParams = new URLSearchParams(location.search);
     const commentId = searchParams.get('commentId');
     const rawParagraphLocation = searchParams.get('paragraphLocation');
@@ -66,6 +67,43 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
 
     return commentId ? { commentId, paragraphLocation } : null;
   }, [location.search]);
+  const [activeCommentTarget, setActiveCommentTarget] = useState<typeof parsedCommentTarget>(null);
+
+  useEffect(() => {
+    if (!parsedCommentTarget) {
+      return;
+    }
+
+    setActiveCommentTarget(parsedCommentTarget);
+
+    const searchParams = new URLSearchParams(location.search);
+    searchParams.delete('commentId');
+    searchParams.delete('paragraphLocation');
+    const nextSearch = searchParams.toString();
+    navigate(
+      {
+        pathname: location.pathname,
+        search: nextSearch ? `?${nextSearch}` : '',
+      },
+      { replace: true }
+    );
+  }, [location.pathname, location.search, navigate, parsedCommentTarget]);
+
+  useEffect(() => {
+    const routeKey = `${params.bookId ?? ''}:${params.chapter ?? ''}`;
+    if (lastRouteKeyRef.current === null) {
+      lastRouteKeyRef.current = routeKey;
+      return;
+    }
+
+    if (lastRouteKeyRef.current !== routeKey) {
+      lastRouteKeyRef.current = routeKey;
+      setActiveCommentTarget(parsedCommentTarget ?? null);
+      return;
+    }
+
+    lastRouteKeyRef.current = routeKey;
+  }, [params.bookId, params.chapter, parsedCommentTarget]);
 
   useEffect(() => {
     setIsReaderFrameReady(accessDeniedReason !== null);
@@ -194,7 +232,7 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
   useEffect(() => {
     const routeInfo = parseReaderRoute(params.bookId, params.chapter);
     const scroller = scrollerRef.current;
-    if (!routeInfo || !scroller || (!content && !accessDeniedReason) || commentTarget) {
+    if (!routeInfo || !scroller || (!content && !accessDeniedReason) || parsedCommentTarget) {
       return;
     }
 
@@ -331,7 +369,7 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
         delete scroller.dataset.readerRestoreUntil;
       }
     };
-  }, [accessDeniedReason, commentTarget, content, fontSize, isDarkMode, params.bookId, params.chapter, scrollerRef, selectedFont]);
+  }, [accessDeniedReason, content, fontSize, isDarkMode, params.bookId, params.chapter, parsedCommentTarget, scrollerRef, selectedFont]);
 
   useEffect(() => {
     if (iframeRef.current) {
@@ -548,22 +586,22 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
   }, [chapterCommentLocationKey]);
 
   useEffect(() => {
-    if (!commentTarget || !commentLocation) {
+    if (!activeCommentTarget || !commentLocation) {
       return;
     }
 
-    if (commentTarget.paragraphLocation) {
+    if (activeCommentTarget.paragraphLocation) {
       const targetLocation = {
         ...commentLocation,
-        paragraphLocation: commentTarget.paragraphLocation,
+        paragraphLocation: activeCommentTarget.paragraphLocation,
       };
       setParagraphCommentLocation(targetLocation);
-      setActiveParagraphCommentCount(paragraphCommentCounts[commentTarget.paragraphLocation.paragraphIndex] ?? 0);
+      setActiveParagraphCommentCount(paragraphCommentCounts[activeCommentTarget.paragraphLocation.paragraphIndex] ?? 0);
       return;
     }
 
     setShouldLoadChapterComments(true);
-  }, [commentLocation, commentTarget, paragraphCommentCounts]);
+  }, [activeCommentTarget, commentLocation, paragraphCommentCounts]);
 
   useEffect(() => {
     if (shouldLoadChapterComments || !chapterCommentLocationKey || !isReaderFrameReady) {
@@ -680,7 +718,7 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
           <>
             <div ref={chapterCommentsSentinelRef} className="mt-8 h-px w-full" aria-hidden="true" />
             {shouldLoadChapterComments ? (
-              <CommentSection locationId={commentLocation} className="mb-4" highlightedCommentId={commentTarget?.commentId} />
+              <CommentSection locationId={commentLocation} className="mb-4" highlightedCommentId={activeCommentTarget?.commentId} />
             ) : (
               <section
                 className={`mx-auto mb-4 w-full max-w-3xl rounded-2xl border px-4 py-5 ${
@@ -732,7 +770,7 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
             <CommentSection
               locationId={paragraphCommentLocation}
               hideDefaultHeader
-              highlightedCommentId={commentTarget?.commentId}
+              highlightedCommentId={activeCommentTarget?.commentId}
               onCommentCountChange={handleParagraphModalCommentCountChange}
             />
           </div>
