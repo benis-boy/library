@@ -44,7 +44,6 @@ export function InnerApp() {
   const [galleryTagOptions, setGalleryTagOptions] = useState<GalleryTagOption[]>([]);
 
   const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-  console.log('Test');
 
   const scrollerRef = useRef<HTMLDivElement>(null);
   const drawerRef = useRef<HTMLDivElement>(null);
