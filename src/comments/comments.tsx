@@ -46,6 +46,18 @@ export type CommentProps = {
   editor?: ReactNode;
   showReplyAction?: boolean;
   showReactionPicker?: boolean;
+  contentClassName?: string;
+  imageClassName?: string;
+  onGoToThread?: () => void;
+};
+
+export type CommentPreviewProps = {
+  comment: CommentModel | null | undefined;
+  missingText: string;
+  compact?: boolean;
+  className?: string;
+  expandedContent?: ReactNode;
+  onImageClick?: (imageSrc: string, imageAlt: string) => void;
 };
 
 const DEFAULT_MAX_DEPTH_INDENT = 8;
@@ -98,6 +110,58 @@ const toDateTimeAttribute = (timestamp: TimestampMs) => {
   return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
 };
 
+export const CommentPreview = ({
+  comment,
+  missingText,
+  compact = false,
+  className,
+  expandedContent,
+}: CommentPreviewProps) => {
+  const { isDarkMode } = useContext(ConfigurationContext);
+  const [expanded, setExpanded] = useState(false);
+
+  if (comment === undefined) {
+    return <p className={`text-sm opacity-70 ${className ?? ''}`.trim()}>Loading...</p>;
+  }
+
+  if (comment === null) {
+    return <p className={`text-sm italic opacity-70 ${className ?? ''}`.trim()}>{missingText}</p>;
+  }
+
+  if (compact && expanded && expandedContent) {
+    return <>{expandedContent}</>;
+  }
+
+  const attachmentUrl = comment.imageUrl?.trim() || null;
+
+  return (
+    <div className="rounded-xl border border-current/10 p-2">
+      <div className={className}>
+        <button
+          type="button"
+          className="block w-full text-left"
+          aria-expanded={compact ? expanded : undefined}
+          onClick={() => compact && setExpanded((isExpanded) => !isExpanded)}
+        >
+          <p
+            className={`whitespace-pre-wrap text-sm leading-6 ${isDarkMode ? 'text-slate-100' : 'text-slate-900'} ${compact && !expanded ? 'line-clamp-1' : ''}`}
+          >
+            {comment.text}
+          </p>
+          {attachmentUrl ? (
+            <img
+              src={attachmentUrl}
+              alt="Comment attachment"
+              loading="lazy"
+              className="max-h-48 w-auto max-w-full rounded-lg border border-current/10 object-contain"
+            />
+          ) : null}
+        </button>
+      </div>
+    </div>
+  );
+};
+
 export const Comment = ({
   commentId,
   comment,
@@ -117,6 +181,9 @@ export const Comment = ({
   editor,
   showReplyAction = true,
   showReactionPicker = true,
+  contentClassName,
+  imageClassName,
+  onGoToThread,
 }: CommentProps) => {
   const { isDarkMode } = useContext(ConfigurationContext);
   const [isActionsMenuOpen, setIsActionsMenuOpen] = useState(false);
@@ -125,9 +192,10 @@ export const Comment = ({
   const timestampLabel = formatTimestamp(comment.timestamp);
   const dateTime = toDateTimeAttribute(comment.timestamp);
   const attachmentUrl = comment.imageUrl?.trim() || null;
-  const visibleReactions = COMMENT_REACTION_OPTIONS.map((emoji) => ({ emoji, count: reactions[emoji]?.length ?? 0 })).filter(
-    (reaction) => reaction.count > 0
-  );
+  const visibleReactions = COMMENT_REACTION_OPTIONS.map((emoji) => ({
+    emoji,
+    count: reactions[emoji]?.length ?? 0,
+  })).filter((reaction) => reaction.count > 0);
   const articleClass = isTargetHighlighted
     ? isDarkMode
       ? 'border-cyan-400 bg-cyan-950/70 shadow-cyan-950/50 ring-2 ring-cyan-400/70'
@@ -136,13 +204,13 @@ export const Comment = ({
       ? isDarkMode
         ? 'border-sky-700/80 bg-sky-950/35 shadow-sky-950/20'
         : 'border-sky-200 bg-sky-50/70 shadow-sky-100/60'
-    : isDisconnected
-      ? isDarkMode
-        ? 'border-orange-700 bg-orange-950'
-        : 'border-orange-300 bg-orange-50'
-      : isDarkMode
-        ? 'border-slate-700 bg-slate-900'
-        : 'border-slate-200 bg-white';
+      : isDisconnected
+        ? isDarkMode
+          ? 'border-orange-700 bg-orange-950'
+          : 'border-orange-300 bg-orange-50'
+        : isDarkMode
+          ? 'border-slate-700 bg-slate-900'
+          : 'border-slate-200 bg-white';
 
   useEffect(() => {
     if (!isActionsMenuOpen) {
@@ -162,9 +230,42 @@ export const Comment = ({
   }, [isActionsMenuOpen]);
 
   return (
-    <article className={`rounded-2xl border p-3 shadow-sm transition-colors ${articleClass}`} data-comment-id={commentId}>
-      <header className={`mb-2 flex flex-wrap items-center justify-between gap-2 text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+    <article
+      className={`rounded-2xl border p-3 shadow-sm transition-colors ${articleClass}`}
+      data-comment-id={commentId}
+    >
+      <header
+        className={`mb-2 flex flex-wrap items-center justify-between gap-2 text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}
+      >
         <div className="flex flex-wrap items-center gap-2">
+          {onGoToThread ? (
+            <button
+              type="button"
+              aria-label="Go to thread"
+              title="Go to thread"
+              onClick={onGoToThread}
+              className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors ${
+                isDarkMode
+                  ? 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'
+                  : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'
+              }`}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                className="h-4 w-4 -scale-y-100"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M14 4h6v6" />
+                <path d="M20 4 10 14" />
+                <path d="M10 7H7a3 3 0 0 0-3 3v7a3 3 0 0 0 3 3h7a3 3 0 0 0 3-3v-3" />
+              </svg>
+            </button>
+          ) : null}
           <strong className={isDarkMode ? 'text-slate-100' : 'text-slate-900'}>{displayUserName}</strong>
           <span aria-hidden="true">-</span>
           <time dateTime={dateTime} title={dateTime ? new Date(comment.timestamp).toLocaleString() : undefined}>
@@ -180,7 +281,9 @@ export const Comment = ({
               aria-expanded={isActionsMenuOpen}
               onClick={() => setIsActionsMenuOpen((isOpen) => !isOpen)}
               className={`flex h-7 w-7 items-center justify-center rounded-full text-lg leading-none ${
-                isDarkMode ? 'text-slate-400 hover:bg-slate-800 hover:text-slate-100' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'
+                isDarkMode
+                  ? 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'
+                  : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'
               }`}
             >
               ...
@@ -191,36 +294,36 @@ export const Comment = ({
                   isDarkMode ? 'border-slate-700 bg-slate-900' : 'border-slate-200 bg-white'
                 }`}
               >
-              {onEdit ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsActionsMenuOpen(false);
-                    onEdit({ commentId });
-                  }}
-                  disabled={actionsDisabled}
-                  className={`block w-full px-3 py-2 text-left disabled:cursor-not-allowed disabled:opacity-60 ${
-                    isDarkMode ? 'text-slate-200 hover:bg-slate-800' : 'text-slate-700 hover:bg-slate-100'
-                  }`}
-                >
-                  Edit
-                </button>
-              ) : null}
-              {onDelete ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsActionsMenuOpen(false);
-                    onDelete({ commentId });
-                  }}
-                  disabled={actionsDisabled}
-                  className={`block w-full px-3 py-2 text-left disabled:cursor-not-allowed disabled:opacity-60 ${
-                    isDarkMode ? 'text-red-300 hover:bg-red-950' : 'text-red-700 hover:bg-red-50'
-                  }`}
-                >
-                  Delete
-                </button>
-              ) : null}
+                {onEdit ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsActionsMenuOpen(false);
+                      onEdit({ commentId });
+                    }}
+                    disabled={actionsDisabled}
+                    className={`block w-full px-3 py-2 text-left disabled:cursor-not-allowed disabled:opacity-60 ${
+                      isDarkMode ? 'text-slate-200 hover:bg-slate-800' : 'text-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    Edit
+                  </button>
+                ) : null}
+                {onDelete ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsActionsMenuOpen(false);
+                      onDelete({ commentId });
+                    }}
+                    disabled={actionsDisabled}
+                    className={`block w-full px-3 py-2 text-left disabled:cursor-not-allowed disabled:opacity-60 ${
+                      isDarkMode ? 'text-red-300 hover:bg-red-950' : 'text-red-700 hover:bg-red-50'
+                    }`}
+                  >
+                    Delete
+                  </button>
+                ) : null}
               </div>
             ) : null}
           </div>
@@ -229,7 +332,11 @@ export const Comment = ({
 
       {editor || (
         <>
-          <p className={`whitespace-pre-wrap text-sm leading-6 ${isDarkMode ? 'text-slate-100' : 'text-slate-900'}`}>{comment.text}</p>
+          <p
+            className={`whitespace-pre-wrap text-sm leading-6 ${isDarkMode ? 'text-slate-100' : 'text-slate-900'} ${contentClassName ?? ''}`.trim()}
+          >
+            {comment.text}
+          </p>
 
           {attachmentUrl ? (
             <button
@@ -243,7 +350,7 @@ export const Comment = ({
                 src={attachmentUrl}
                 alt={`Attachment for comment ${commentId}`}
                 loading="lazy"
-                className={`max-h-72 w-auto max-w-full rounded-lg border object-contain ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}
+                className={`max-h-72 w-auto max-w-full rounded-lg border object-contain ${isDarkMode ? 'border-slate-700' : 'border-slate-200'} ${imageClassName ?? ''}`.trim()}
               />
             </button>
           ) : null}
@@ -256,7 +363,9 @@ export const Comment = ({
                   onClick={() => onReply?.({ replyToCommentId: commentId })}
                   disabled={actionsDisabled || !onReply}
                   className={`rounded-full px-2 py-1 font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-                    isDarkMode ? 'text-slate-300 hover:bg-slate-800 hover:text-slate-100' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                    isDarkMode
+                      ? 'text-slate-300 hover:bg-slate-800 hover:text-slate-100'
+                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                   }`}
                 >
                   Reply
@@ -432,7 +541,9 @@ export const Thread = ({
         <div
           key={`missing-${commentId}`}
           className={`ml-4 rounded-md border px-3 py-2 text-xs ${
-            isDarkMode ? 'border-orange-700 bg-orange-950 text-orange-200' : 'border-orange-300 bg-orange-50 text-orange-800'
+            isDarkMode
+              ? 'border-orange-700 bg-orange-950 text-orange-200'
+              : 'border-orange-300 bg-orange-50 text-orange-800'
           }`}
         >
           Missing comment payload for {commentId}
@@ -476,7 +587,10 @@ export const Thread = ({
         />
         {renderAfterComment?.(commentId)}
         {childIds.length > 0 ? (
-          <div className={`relative mt-3 space-y-3 pl-5 ${depth < maxDepthIndent ? 'ml-5' : 'ml-0'}`} aria-label={`Replies to ${commentId}`}>
+          <div
+            className={`relative mt-3 space-y-3 pl-5 ${depth < maxDepthIndent ? 'ml-5' : 'ml-0'}`}
+            aria-label={`Replies to ${commentId}`}
+          >
             {childIds.map((childId, childIndex) => (
               <div key={childId} className="relative">
                 <span
@@ -485,7 +599,10 @@ export const Thread = ({
                   }`}
                   aria-hidden="true"
                 />
-                <span className={`absolute -left-[22px] top-6 h-0.5 w-5 rounded-full ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} aria-hidden="true" />
+                <span
+                  className={`absolute -left-[22px] top-6 h-0.5 w-5 rounded-full ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`}
+                  aria-hidden="true"
+                />
                 {renderCommentSubtree(childId, depth + 1, isDisconnected, nextBranch)}
               </div>
             ))}
@@ -518,7 +635,9 @@ export const Thread = ({
       ) : (
         <div
           className={`rounded-lg border px-3 py-2 text-sm ${
-            isDarkMode ? 'border-orange-700 bg-orange-950 text-orange-200' : 'border-orange-300 bg-orange-50 text-orange-800'
+            isDarkMode
+              ? 'border-orange-700 bg-orange-950 text-orange-200'
+              : 'border-orange-300 bg-orange-50 text-orange-800'
           }`}
         >
           Root comment {thread.rootCommentId} is missing from this thread payload.
@@ -527,7 +646,11 @@ export const Thread = ({
 
       {disconnectedRootIds.length > 0 ? (
         <div className="space-y-3">
-          <div className={`text-xs font-semibold uppercase tracking-wide ${isDarkMode ? 'text-orange-300' : 'text-orange-700'}`}>Disconnected comments</div>
+          <div
+            className={`text-xs font-semibold uppercase tracking-wide ${isDarkMode ? 'text-orange-300' : 'text-orange-700'}`}
+          >
+            Disconnected comments
+          </div>
           {disconnectedRootIds.map((commentId) => renderCommentSubtree(commentId, 0, true, new Set<CommentId>()))}
         </div>
       ) : null}

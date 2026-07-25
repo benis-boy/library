@@ -11,9 +11,17 @@ import {
   NotificationsSummaryResponse,
   sendThreadMutation,
 } from '../comments/comments-api';
-import { Comment as CommentModel, CommentId, CommentReactions, MutationOwner, ThreadLocationId, toThreadLocationKey } from '../comments/dataModel';
-import { Comment } from '../comments/comments';
+import {
+  Comment as CommentModel,
+  CommentId,
+  CommentReactions,
+  MutationOwner,
+  ThreadLocationId,
+  toThreadLocationKey,
+} from '../comments/dataModel';
+import { Comment, CommentPreview } from '../comments/comments';
 import { CommentInput } from '../comments/comment-section';
+import { ImageLightbox } from './gallery/ImageLightbox';
 import { getAppDialogSlotProps } from './general/app-dialog';
 import { ConfigurationContext } from '../context/ConfigurationContext';
 import { getReaderRoute } from '../context/LibraryContext';
@@ -66,32 +74,6 @@ const formatRelativeTime = (timestamp: number) => {
   return `${days} day${days === 1 ? '' : 's'} ago`;
 };
 
-const CommentText = ({ comment, missingText, compact }: { comment: CommentModel | null | undefined; missingText: string; compact?: boolean }) => {
-  const [expanded, setExpanded] = useState(false);
-  if (comment === undefined) {
-    return <p className="text-sm opacity-70">Loading...</p>;
-  }
-  if (comment === null) {
-    return <p className="text-sm italic opacity-70">{missingText}</p>;
-  }
-
-  const attachmentUrl = comment.imageUrl?.trim() || null;
-
-  return (
-    <button
-      type="button"
-      className="block w-full text-left"
-      aria-expanded={compact ? expanded : undefined}
-      onClick={() => compact && setExpanded((isExpanded) => !isExpanded)}
-    >
-      <p className={`whitespace-pre-wrap text-sm leading-6 ${compact && !expanded ? 'line-clamp-1' : ''}`}>{comment.text}</p>
-      {attachmentUrl && (!compact || expanded) ? (
-        <img src={attachmentUrl} alt="Comment attachment" loading="lazy" className="mt-3 max-h-48 w-auto max-w-full rounded-lg border border-current/10 object-contain" />
-      ) : null}
-    </button>
-  );
-};
-
 export const NotificationsModal = ({
   open,
   owner,
@@ -121,6 +103,7 @@ export const NotificationsModal = ({
   const [replyingTo, setReplyingTo] = useState<NotificationCommentTarget | null>(null);
   const [editing, setEditing] = useState<NotificationCommentTarget | null>(null);
   const [pendingDelete, setPendingDelete] = useState<NotificationCommentTarget | null>(null);
+  const [lightboxImage, setLightboxImage] = useState<{ src: string; alt: string } | null>(null);
   const [unreadCutoff, setUnreadCutoff] = useState(initialUnreadCutoff);
   const hasLoadedNotificationsRef = useRef(false);
 
@@ -135,6 +118,7 @@ export const NotificationsModal = ({
     setReplyingTo(null);
     setEditing(null);
     setPendingDelete(null);
+    setLightboxImage(null);
   }, [initialUnreadCutoff, ownerKey]);
 
   const signedInUserName = patreonContext?.userInfo?.userName ?? null;
@@ -215,43 +199,49 @@ export const NotificationsModal = ({
     }
 
     const reactionsResponse = await fetchCommentReactions(commentIds);
-    setReactionsByCommentId((previousReactions) => ({ ...previousReactions, ...reactionsResponse.reactionsByCommentId }));
+    setReactionsByCommentId((previousReactions) => ({
+      ...previousReactions,
+      ...reactionsResponse.reactionsByCommentId,
+    }));
   };
 
-  const loadInitial = useCallback(async ({ force = false }: { force?: boolean } = {}) => {
-    if (!force && hasLoadedNotificationsRef.current) {
-      return;
-    }
-
-    setIsLoading(true);
-    setError(null);
-    setReplyingTo(null);
-    setEditing(null);
-    setPendingDelete(null);
-
-    try {
-      const response = await fetchNotifications(owner, { limit: PAGE_SIZE });
-      setUnreadCutoff(response.lastCheckedAt);
-      setItems(response.items);
-      setDetails({});
-      setReactionsByCommentId({});
-      setNextCursor(response.nextCursor);
-
-      if (response.unreadCount > 0) {
-        const summary = await markNotificationsChecked(owner);
-        onSummaryChange(summary);
-      } else {
-        onSummaryChange({ unreadCount: response.unreadCount, lastCheckedAt: response.lastCheckedAt });
+  const loadInitial = useCallback(
+    async ({ force = false }: { force?: boolean } = {}) => {
+      if (!force && hasLoadedNotificationsRef.current) {
+        return;
       }
 
-      await loadDetails(response.items);
-      hasLoadedNotificationsRef.current = true;
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : 'Could not load notifications.');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [onSummaryChange, owner]);
+      setIsLoading(true);
+      setError(null);
+      setReplyingTo(null);
+      setEditing(null);
+      setPendingDelete(null);
+
+      try {
+        const response = await fetchNotifications(owner, { limit: PAGE_SIZE });
+        setUnreadCutoff(response.lastCheckedAt);
+        setItems(response.items);
+        setDetails({});
+        setReactionsByCommentId({});
+        setNextCursor(response.nextCursor);
+
+        if (response.unreadCount > 0) {
+          const summary = await markNotificationsChecked(owner);
+          onSummaryChange(summary);
+        } else {
+          onSummaryChange({ unreadCount: response.unreadCount, lastCheckedAt: response.lastCheckedAt });
+        }
+
+        await loadDetails(response.items);
+        hasLoadedNotificationsRef.current = true;
+      } catch (caughtError) {
+        setError(caughtError instanceof Error ? caughtError.message : 'Could not load notifications.');
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [onSummaryChange, owner]
+  );
 
   useEffect(() => {
     if (!open) {
@@ -265,14 +255,22 @@ export const NotificationsModal = ({
     const response = await fetchCommentsForLocations([{ locationId, commentIds }]);
     setDetails((previousDetails) => mergeNotificationDetails(previousDetails, response));
     const reactionsResponse = await fetchCommentReactions(commentIds);
-    setReactionsByCommentId((previousReactions) => ({ ...previousReactions, ...reactionsResponse.reactionsByCommentId }));
+    setReactionsByCommentId((previousReactions) => ({
+      ...previousReactions,
+      ...reactionsResponse.reactionsByCommentId,
+    }));
   };
 
   const findLoadedComment = (locationId: ThreadLocationId, commentId: CommentId) => {
     return details[toThreadLocationKey(locationId)]?.commentsById[commentId];
   };
 
-  const handleReply = async (text: string, commentAnonymously: boolean, imageUrl: string | null, target: NotificationCommentTarget) => {
+  const handleReply = async (
+    text: string,
+    commentAnonymously: boolean,
+    imageUrl: string | null,
+    target: NotificationCommentTarget
+  ) => {
     const commentId = createCommentId();
     const mutationOwner = getMutationOwner(commentAnonymously);
     const userName = mutationOwner?.userName ?? null;
@@ -302,7 +300,12 @@ export const NotificationsModal = ({
     }
   };
 
-  const handleEdit = async (text: string, commentAnonymously: boolean, imageUrl: string | null, target: NotificationCommentTarget) => {
+  const handleEdit = async (
+    text: string,
+    commentAnonymously: boolean,
+    imageUrl: string | null,
+    target: NotificationCommentTarget
+  ) => {
     const existingComment = findLoadedComment(target.locationId, target.commentId);
     if (!existingComment || existingComment === null) {
       setError('Could not find comment to edit.');
@@ -360,10 +363,16 @@ export const NotificationsModal = ({
       if (response.type === 'threads-updated') {
         await refreshLocationDetails(target.locationId, [target.commentId]);
         setPendingDelete(null);
-        if (replyingTo?.commentId === target.commentId && toThreadLocationKey(replyingTo.locationId) === toThreadLocationKey(target.locationId)) {
+        if (
+          replyingTo?.commentId === target.commentId &&
+          toThreadLocationKey(replyingTo.locationId) === toThreadLocationKey(target.locationId)
+        ) {
           setReplyingTo(null);
         }
-        if (editing?.commentId === target.commentId && toThreadLocationKey(editing.locationId) === toThreadLocationKey(target.locationId)) {
+        if (
+          editing?.commentId === target.commentId &&
+          toThreadLocationKey(editing.locationId) === toThreadLocationKey(target.locationId)
+        ) {
           setEditing(null);
         }
       }
@@ -374,7 +383,12 @@ export const NotificationsModal = ({
     }
   };
 
-  const handleToggleReaction = async ({ locationId, commentId, emoji, shouldAdd }: NotificationCommentTarget & { emoji: string; shouldAdd: boolean }) => {
+  const handleToggleReaction = async ({
+    locationId,
+    commentId,
+    emoji,
+    shouldAdd,
+  }: NotificationCommentTarget & { emoji: string; shouldAdd: boolean }) => {
     if (!signedMutationOwner || !signedInUserName) {
       return;
     }
@@ -424,6 +438,121 @@ export const NotificationsModal = ({
     }
   };
 
+  const matchesTarget = (
+    target: NotificationCommentTarget | null,
+    locationId: ThreadLocationId,
+    commentId: CommentId
+  ) => {
+    if (!target) {
+      return false;
+    }
+
+    return target.commentId === commentId && toThreadLocationKey(target.locationId) === toThreadLocationKey(locationId);
+  };
+
+  const getViewerReactionEmojis = (commentId: CommentId) =>
+    new Set(
+      signedInUserName
+        ? Object.entries(reactionsByCommentId[commentId] ?? {})
+            .filter(([, userNames]) => userNames.includes(signedInUserName))
+            .map(([emoji]) => emoji)
+        : []
+    );
+
+  const renderCommentInput = (target: NotificationCommentTarget, comment: CommentModel, mode: 'reply' | 'edit') => {
+    if (mode === 'edit') {
+      return (
+        <div className="mt-3">
+          <CommentInput
+            autoFocus
+            disabled={isSubmitting}
+            embedded
+            initialText={comment.text}
+            initialImageUrl={comment.imageUrl ?? undefined}
+            placeholder="Edit your comment..."
+            submitLabel="Comment"
+            onCancel={() => setEditing(null)}
+            onSubmit={(text, commentAnonymously, imageUrl) => handleEdit(text, commentAnonymously, imageUrl, target)}
+          />
+        </div>
+      );
+    }
+
+    return (
+      <div className="mt-3 pl-2">
+        <CommentInput
+          autoFocus
+          disabled={isSubmitting}
+          placeholder="Add a reply..."
+          submitLabel="Reply"
+          onCancel={() => setReplyingTo(null)}
+          onSubmit={(text, commentAnonymously, imageUrl) => handleReply(text, commentAnonymously, imageUrl, target)}
+        />
+      </div>
+    );
+  };
+
+  const renderNotificationComment = ({
+    locationId,
+    commentId,
+    comment,
+    contentClassName,
+    imageClassName,
+  }: {
+    locationId: ThreadLocationId;
+    commentId: CommentId;
+    comment: CommentModel;
+    contentClassName?: string;
+    imageClassName?: string;
+  }) => {
+    const target = { locationId, commentId };
+    const canEdit = Boolean(signedInUserName && comment.userName === signedInUserName);
+
+    return (
+      <>
+        <Comment
+          commentId={commentId}
+          comment={comment}
+          reactions={reactionsByCommentId[commentId] ?? {}}
+          viewerReactionEmojis={getViewerReactionEmojis(commentId)}
+          isOwnComment={Boolean(signedInUserName && comment.userName === signedInUserName)}
+          actionsDisabled={isSubmitting}
+          onReply={({ replyToCommentId }) => {
+            setEditing(null);
+            setReplyingTo({ locationId, commentId: replyToCommentId });
+          }}
+          onToggleReaction={
+            canUseSignedIdentity
+              ? ({ commentId: reactionCommentId, emoji, shouldAdd }) =>
+                  void handleToggleReaction({ locationId, commentId: reactionCommentId, emoji, shouldAdd })
+              : undefined
+          }
+          onEdit={
+            canEdit
+              ? ({ commentId: editedCommentId }) => {
+                  setReplyingTo(null);
+                  setEditing({ locationId, commentId: editedCommentId });
+                }
+              : undefined
+          }
+          onDelete={
+            canEdit
+              ? ({ commentId: deletedCommentId }) => setPendingDelete({ locationId, commentId: deletedCommentId })
+              : undefined
+          }
+          onImageClick={(src, alt) => setLightboxImage({ src, alt })}
+          onGoToThread={() => goToCommentThread(locationId, commentId)}
+          editor={
+            matchesTarget(editing, locationId, commentId) ? renderCommentInput(target, comment, 'edit') : undefined
+          }
+          contentClassName={contentClassName}
+          imageClassName={imageClassName}
+        />
+        {matchesTarget(replyingTo, locationId, commentId) ? renderCommentInput(target, comment, 'reply') : null}
+      </>
+    );
+  };
+
   const loadMore = async () => {
     if (nextCursor === null || isLoadingMore) {
       return;
@@ -454,17 +583,15 @@ export const NotificationsModal = ({
     }
   };
 
-  const goToThread = (notification: CommentNotification) => {
+  const goToCommentThread = (locationId: ThreadLocationId, commentId: CommentId) => {
     onClose({ preserveUnreadCutoff: true });
 
-    const params = new URLSearchParams({
-      commentId: notification.type === 'comment-reply' ? notification.replyCommentId : notification.rootCommentId,
-    });
-    if (notification.locationId.paragraphLocation) {
-      params.set('paragraphLocation', JSON.stringify(notification.locationId.paragraphLocation));
+    const params = new URLSearchParams({ commentId });
+    if (locationId.paragraphLocation) {
+      params.set('paragraphLocation', JSON.stringify(locationId.paragraphLocation));
     }
 
-    navigate(`${getReaderRoute(notification.locationId.bookId, notification.locationId.chapterId)}?${params.toString()}`);
+    navigate(`${getReaderRoute(locationId.bookId, locationId.chapterId)}?${params.toString()}`);
   };
 
   if (!open) {
@@ -485,7 +612,9 @@ export const NotificationsModal = ({
       })}
     >
       <div className="flex max-h-[calc(100vh-3rem)] flex-col">
-        <div className={`flex items-center justify-between gap-3 border-b p-4 ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+        <div
+          className={`flex items-center justify-between gap-3 border-b p-4 ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}
+        >
           <h2 className="text-lg font-bold">Comment Notifications</h2>
           <div className="flex items-center gap-2">
             <button
@@ -495,7 +624,11 @@ export const NotificationsModal = ({
             >
               Refresh
             </button>
-            <button type="button" className="rounded-full bg-[#BE3144] px-3 py-1 text-sm font-semibold text-white" onClick={() => onClose()}>
+            <button
+              type="button"
+              className="rounded-full bg-[#BE3144] px-3 py-1 text-sm font-semibold text-white"
+              onClick={() => onClose()}
+            >
               Close
             </button>
           </div>
@@ -503,32 +636,42 @@ export const NotificationsModal = ({
 
         <div ref={listRef} className="overflow-y-auto overscroll-contain p-4" onScroll={handleScroll}>
           {isLoading ? <p className="text-sm opacity-70">Loading notifications...</p> : null}
-          {error ? <p className="rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
-          {!isLoading && items.length === 0 ? <p className="text-sm opacity-70">No comment notifications yet.</p> : null}
+          {error ? (
+            <p className="rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
+          ) : null}
+          {!isLoading && items.length === 0 ? (
+            <p className="text-sm opacity-70">No comment notifications yet.</p>
+          ) : null}
 
           <div className="space-y-3">
             {items.map((notification) => {
               const locationKey = toThreadLocationKey(notification.locationId);
               const locationDetails = details[locationKey];
               const isNew = notification.createdAt > unreadCutoff;
-              const parent = notification.type === 'comment-reply' ? locationDetails?.commentsById[notification.parentCommentId] : undefined;
-              const reply = notification.type === 'comment-reply' ? locationDetails?.commentsById[notification.replyCommentId] : undefined;
-              const rootComment = notification.type === 'comment-thread-start' ? locationDetails?.commentsById[notification.rootCommentId] : undefined;
+              const parent =
+                notification.type === 'comment-reply'
+                  ? locationDetails?.commentsById[notification.parentCommentId]
+                  : undefined;
+              const reply =
+                notification.type === 'comment-reply'
+                  ? locationDetails?.commentsById[notification.replyCommentId]
+                  : undefined;
+              const rootComment =
+                notification.type === 'comment-thread-start'
+                  ? locationDetails?.commentsById[notification.rootCommentId]
+                  : undefined;
               const lowestPointComment = notification.type === 'comment-reply' ? reply : rootComment;
-              const lowestPointCommentId = notification.type === 'comment-reply' ? notification.replyCommentId : notification.rootCommentId;
-              const lowestPointTarget = { locationId: notification.locationId, commentId: lowestPointCommentId };
-              const isEditingLowestPoint =
-                editing?.commentId === lowestPointCommentId && toThreadLocationKey(editing.locationId) === locationKey;
-              const isReplyingToLowestPoint =
-                replyingTo?.commentId === lowestPointCommentId && toThreadLocationKey(replyingTo.locationId) === locationKey;
-              const canEditLowestPoint = Boolean(
-                signedInUserName && lowestPointComment && lowestPointComment !== null && lowestPointComment.userName === signedInUserName
-              );
+              const lowestPointCommentId =
+                notification.type === 'comment-reply' ? notification.replyCommentId : notification.rootCommentId;
               const isMissingReplyThread =
-                notification.type === 'comment-reply' && locationDetails?.threadExists === false && parent === null && reply === null;
-              const isMissingStartThread = notification.type === 'comment-thread-start' && locationDetails?.threadExists === false && rootComment === null;
-              const canGoToThread = !isMissingReplyThread && !isMissingStartThread;
-
+                notification.type === 'comment-reply' &&
+                locationDetails?.threadExists === false &&
+                parent === null &&
+                reply === null;
+              const isMissingStartThread =
+                notification.type === 'comment-thread-start' &&
+                locationDetails?.threadExists === false &&
+                rootComment === null;
               return (
                 <article
                   key={notification.id}
@@ -544,86 +687,56 @@ export const NotificationsModal = ({
                 >
                   <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs opacity-75">
                     <span>
-                      {notification.actorUserName ?? 'Anonymous'} {notification.type === 'comment-reply' ? 'replied' : 'started a new thread'}
+                      {notification.actorUserName ?? 'Anonymous'}{' '}
+                      {notification.type === 'comment-reply' ? 'replied' : 'started a new thread'}
                     </span>
-                    <time dateTime={new Date(notification.createdAt).toISOString()}>{formatRelativeTime(notification.createdAt)}</time>
+                    <time dateTime={new Date(notification.createdAt).toISOString()}>
+                      {formatRelativeTime(notification.createdAt)}
+                    </time>
                   </div>
                   {isMissingReplyThread || isMissingStartThread ? (
-                    <div className="rounded-xl border border-current/10 p-3 text-sm italic opacity-80">Thread no longer exists.</div>
+                    <div className="rounded-xl border border-current/10 p-3 text-sm italic opacity-80">
+                      Thread no longer exists.
+                    </div>
                   ) : (
                     <>
                       {notification.type === 'comment-reply' ? (
-                        <div className="rounded-xl border border-current/10 p-2 opacity-80">
-                          <CommentText comment={parent} missingText="Original comment no longer exists." compact />
-                        </div>
+                        <CommentPreview
+                          comment={parent}
+                          missingText="Original comment no longer exists."
+                          compact
+                          className="opacity-80 flex flex-col w-full"
+                          onImageClick={(src, alt) => setLightboxImage({ src, alt })}
+                          expandedContent={
+                            parent
+                              ? renderNotificationComment({
+                                  locationId: notification.locationId,
+                                  commentId: notification.parentCommentId,
+                                  comment: parent,
+                                  contentClassName: isDarkMode ? 'text-slate-300' : 'text-slate-700',
+                                  imageClassName: 'max-h-48',
+                                })
+                              : null
+                          }
+                        ></CommentPreview>
                       ) : null}
                       <div className={notification.type === 'comment-reply' ? 'mt-2' : ''}>
                         {lowestPointComment === undefined ? (
                           <p className="text-sm opacity-70">Loading...</p>
                         ) : lowestPointComment === null ? (
-                          <p className="rounded-xl border border-current/10 p-3 text-sm italic opacity-80">Comment no longer exists.</p>
+                          <p className="rounded-xl border border-current/10 p-3 text-sm italic opacity-80">
+                            Comment no longer exists.
+                          </p>
                         ) : (
-                          <Comment
-                            commentId={lowestPointCommentId}
-                            comment={lowestPointComment}
-                            reactions={reactionsByCommentId[lowestPointCommentId] ?? {}}
-                            isOwnComment={Boolean(signedInUserName && lowestPointComment.userName === signedInUserName)}
-                            actionsDisabled={isSubmitting}
-                            onReply={({ replyToCommentId }) => {
-                              setEditing(null);
-                              setReplyingTo({ locationId: notification.locationId, commentId: replyToCommentId });
-                            }}
-                            onToggleReaction={
-                              canUseSignedIdentity
-                                ? ({ commentId, emoji, shouldAdd }) => void handleToggleReaction({ locationId: notification.locationId, commentId, emoji, shouldAdd })
-                                : undefined
-                            }
-                            onEdit={canEditLowestPoint ? ({ commentId }) => {
-                              setReplyingTo(null);
-                              setEditing({ locationId: notification.locationId, commentId });
-                            } : undefined}
-                            onDelete={canEditLowestPoint ? ({ commentId }) => setPendingDelete({ locationId: notification.locationId, commentId }) : undefined}
-                            editor={isEditingLowestPoint ? (
-                              <div className="mt-3">
-                                <CommentInput
-                                  autoFocus
-                                  disabled={isSubmitting}
-                                  embedded
-                                  initialText={lowestPointComment.text}
-                                  initialImageUrl={lowestPointComment.imageUrl ?? undefined}
-                                  placeholder="Edit your comment..."
-                                  submitLabel="Comment"
-                                  onCancel={() => setEditing(null)}
-                                  onSubmit={(text, commentAnonymously, imageUrl) =>
-                                    handleEdit(text, commentAnonymously, imageUrl, lowestPointTarget)
-                                  }
-                                />
-                              </div>
-                            ) : undefined}
-                          />
+                          renderNotificationComment({
+                            locationId: notification.locationId,
+                            commentId: lowestPointCommentId,
+                            comment: lowestPointComment,
+                          })
                         )}
-                        {isReplyingToLowestPoint ? (
-                          <div className="mt-3 pl-2">
-                            <CommentInput
-                              autoFocus
-                              disabled={isSubmitting}
-                              placeholder="Add a reply..."
-                              submitLabel="Reply"
-                              onCancel={() => setReplyingTo(null)}
-                              onSubmit={(text, commentAnonymously, imageUrl) =>
-                                handleReply(text, commentAnonymously, imageUrl, lowestPointTarget)
-                              }
-                            />
-                          </div>
-                        ) : null}
                       </div>
                     </>
                   )}
-                  {canGoToThread ? (
-                    <button type="button" className="mt-3 rounded-full bg-[#BE3144] px-4 py-2 text-sm font-semibold text-white" onClick={() => goToThread(notification)}>
-                      Go to thread
-                    </button>
-                  ) : null}
                 </article>
               );
             })}
@@ -641,6 +754,12 @@ export const NotificationsModal = ({
           ) : null}
         </div>
       </div>
+      <ImageLightbox
+        open={Boolean(lightboxImage)}
+        imageSrc={lightboxImage?.src ?? ''}
+        imageAlt={lightboxImage?.alt ?? 'Comment attachment'}
+        onClose={() => setLightboxImage(null)}
+      />
       <Dialog
         open={pendingDelete !== null}
         onClose={() => setPendingDelete(null)}
