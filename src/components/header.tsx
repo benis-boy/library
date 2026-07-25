@@ -1,4 +1,4 @@
-import { Fragment, useContext, useEffect, useMemo, useState } from 'react';
+import { Fragment, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LibraryContext } from '../context/LibraryContext';
 import { PatreonContext } from '../context/PatreonContext';
@@ -6,6 +6,7 @@ import { Box, SwipeableDrawer, useMediaQuery, useTheme } from '@mui/material';
 import basicBookData from '../basicBookData';
 import { fetchNotificationSummary } from '../comments/comments-api';
 import { NotificationsModal } from './notifications-modal';
+import { getHeaderHeightPx } from '../header-layout';
 
 const WebsiteHeader = ({
   isHeaderVisible,
@@ -26,12 +27,15 @@ const WebsiteHeader = ({
   const theme = useTheme();
   const isLargeScreen = useMediaQuery(theme.breakpoints.up('lg'));
   const isPortrait = useMediaQuery('(orientation: portrait)');
+  const headerHeight = getHeaderHeightPx({ isPortrait, isLargeScreen });
 
   const [wasVisible, setWasVisible] = useState(isHeaderVisible);
   const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
   const [notificationLastCheckedAt, setNotificationLastCheckedAt] = useState(0);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [modalUnreadCutoff, setModalUnreadCutoff] = useState<number | null>(null);
+  const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
+  const accountMenuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (isHeaderVisible) setWasVisible(true);
@@ -55,6 +59,7 @@ const WebsiteHeader = ({
       setNotificationLastCheckedAt(0);
       setIsNotificationsOpen(false);
       setModalUnreadCutoff(null);
+      setIsAccountMenuOpen(false);
       return;
     }
 
@@ -77,6 +82,23 @@ const WebsiteHeader = ({
       cancelled = true;
     };
   }, [notificationOwner]);
+
+  useEffect(() => {
+    if (!isAccountMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!accountMenuRef.current?.contains(event.target as Node)) {
+        setIsAccountMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+    };
+  }, [isAccountMenuOpen]);
 
   const refreshNotificationSummary = async () => {
     if (!notificationOwner) {
@@ -105,17 +127,23 @@ const WebsiteHeader = ({
   const { handleLogin, handleLogout } = pContext;
   const title = basicBookData.find((bbd) => bbd.id === selectedBook)?.title ?? 'Error - book not found';
 
+  const handleMobileLogout = () => {
+    setIsAccountMenuOpen(false);
+    handleLogout();
+  };
+
   return (
     <SwipeableDrawer
       sx={{
         transition: !isHeaderVisible ? '' : 'all 0.225s ease',
         width: '100%',
-        height: isPortrait ? '80px' : isLargeScreen ? '50px' : '60px',
+        height: headerHeight,
         '& .MuiDrawer-paper': {
           transition: !isHeaderVisible ? '' : 'all 0.225s ease',
-          height: isPortrait ? '80px' : isLargeScreen ? '50px' : '60px',
+          height: headerHeight,
           width: '100%',
           zIndex: 1500,
+          overflow: 'visible',
           margin: 0,
           border: 0,
           backgroundColor: '#09122C', // Equivalent to
@@ -134,9 +162,9 @@ const WebsiteHeader = ({
     >
       <Box
         sx={{
-          height: isPortrait ? '80px' : isLargeScreen ? '50px' : '60px',
+          height: headerHeight,
         }}
-        className="w-full flex items-center justify-between px-4 portrait:px-2"
+        className="relative w-full flex items-center justify-between overflow-visible px-4 portrait:px-2"
       >
         <div className="flex items-center my-2 space-x-2">
           <button
@@ -193,12 +221,12 @@ const WebsiteHeader = ({
         </h1>
         <div id="patreon-section" className="flex items-center">
           {!isLoggedIn && (
-            <button id="patreon-login" className="bg-[#BE3144] px-4 py-2" onClick={handleLogin}>
+            <button id="patreon-login" className="bg-[#BE3144] px-4 py-1" onClick={handleLogin}>
               Login with Patreon
             </button>
           )}
           {isLoggedIn && (
-            <div className="flex flex-col sm:flex-row sm:gap-2 items-center ">
+            <div ref={accountMenuRef} className="relative flex items-center gap-2">
               {notificationOwner ? (
                 <button
                   id="notification-bell"
@@ -227,12 +255,47 @@ const WebsiteHeader = ({
                   ) : null}
                 </button>
               ) : null}
-              <span id="patreon-username" className="ml-2 font-bold text-lg text-white portrait:text-[12px]">
+              <span id="patreon-username" className="ml-2 hidden text-lg font-bold text-white sm:inline portrait:text-[12px]">
                 User: <span className="portrait:text-[14px]">{userInfo?.userName}</span>
               </span>
-              <button id="patreon-logout" className="bg-[#BE3144] px-4 portrait:px-2 py-2" onClick={handleLogout}>
+              <button id="patreon-logout" className="hidden bg-[#BE3144] px-4 py-2 sm:inline-block portrait:px-2" onClick={handleLogout}>
                 Logout
               </button>
+              <button
+                id="patreon-mobile-menu"
+                type="button"
+                aria-label="Open account menu"
+                aria-expanded={isAccountMenuOpen}
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-[#BE3144] text-white sm:hidden"
+                onClick={() => setIsAccountMenuOpen((isOpen) => !isOpen)}
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="h-5 w-5"
+                >
+                  <path d="M4 6h16" />
+                  <path d="M4 12h16" />
+                  <path d="M4 18h16" />
+                </svg>
+              </button>
+              {isAccountMenuOpen ? (
+                <div className="absolute flex flex-col right-0 top-full z-10 mt-2 rounded-xl border border-slate-700 bg-[#09122C] p-3 shadow-2xl sm:hidden">
+                  <p className="text-sm font-bold text-white text-nowrap">User: {userInfo?.userName}</p>
+                  <button
+                    type="button"
+                    className="ml-auto mt-3 bg-[#BE3144] px-4 py-2 text-left text-sm font-semibold text-white"
+                    onClick={handleMobileLogout}
+                  >
+                    Logout
+                  </button>
+                </div>
+              ) : null}
             </div>
           )}
         </div>

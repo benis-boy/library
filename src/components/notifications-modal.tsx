@@ -97,7 +97,9 @@ export const NotificationsModal = ({
 
         setItems(response.items);
         setNextCursor(response.nextCursor);
-        await markNotificationsChecked(owner);
+        if (response.unreadCount > 0) {
+          await markNotificationsChecked(owner);
+        }
         if (!cancelled) {
           await loadDetails(response.items);
         }

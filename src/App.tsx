@@ -6,6 +6,7 @@ import { GalleryTagOption } from './components/gallery/tagUtils';
 import WebsiteHeader from './components/header';
 import { Navigator } from './components/navigator';
 import { ConfigurationProvider } from './context/ConfigurationProvider';
+import { HEADER_VISIBLE_SCROLLER_CLASSES } from './header-layout';
 import { DEFAULT_BOOK, getReaderRoute, parseReaderRoute } from './context/LibraryContext';
 import { LibraryProvider } from './context/LibraryProvider';
 import { PatreonProvider } from './context/PatreonProvider';
@@ -186,7 +187,7 @@ export function InnerApp() {
           marginTop: isHeaderVisible ? 0 : `${hasTouch ? 0 : -headerHeight}px`,
           transition: 'all 0.3s ease',
         }}
-        className={`duration-300 flex flex-col overflow-auto ${isHeaderVisible ? 'max-h-[calc(100vh-60px)] lg:max-h-[calc(100vh-50px)] portrait:max-h-[calc(100vh-80px)] min-h-[calc(100vh-60px)] lg:min-h-[calc(100vh-50px)] portrait:min-h-[calc(100vh-80px)]' : 'max-h-[100vh] min-h-[100vh]'}`}
+        className={`duration-300 flex flex-col overflow-auto ${isHeaderVisible ? HEADER_VISIBLE_SCROLLER_CLASSES : 'max-h-[100vh] min-h-[100vh]'}`}
         onScroll={handleScroll}
       >
         <Suspense fallback={null}>

@@ -11,6 +11,7 @@ import {
   normalizeChapterReference,
   normalizeRouteBookId,
 } from '../context/LibraryContext';
+import { HEADER_VISIBLE_TOP_PADDING_CLASSES } from '../header-layout';
 
 const parseLoadContentParams = (raw: string | null): { chapter: string; isPaid: boolean } | undefined => {
   if (!raw) {
@@ -156,9 +157,7 @@ export const Navigator = ({
       onOpen={() => setOpen(true)}
       swipeAreaWidth={60}
     >
-      <div
-        className={`transition-all duration-300 ${isHeaderVisible ? 'pt-[60px] lg:pt-[50px] portrait:pt-[80px]' : ''} h-full pl-4`}
-      >
+      <div className={`transition-all duration-300 ${isHeaderVisible ? HEADER_VISIBLE_TOP_PADDING_CLASSES : ''} h-full pl-4`}>
         <iframe
           ref={iframeRef}
           onLoad={() => injectStyles(iframeRef, { isDarkMode, selectedFont, fontSize })}

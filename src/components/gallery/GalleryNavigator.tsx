@@ -2,6 +2,7 @@ import { SwipeableDrawer, useMediaQuery, useTheme } from '@mui/material';
 import { useContext, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ConfigurationContext } from '../../context/ConfigurationContext';
+import { HEADER_VISIBLE_TOP_PADDING_CLASSES } from '../../header-layout';
 import { GalleryTagFilter } from './GalleryTagFilter';
 import { buildGalleryTagQueryValue, GalleryTagOption, parseActiveGalleryTags, toggleGalleryTagSelection } from './tagUtils';
 
@@ -74,7 +75,7 @@ export const GalleryNavigator = ({
       onOpen={() => setOpen(true)}
       swipeAreaWidth={60}
     >
-      <div className={`transition-all duration-300 ${isHeaderVisible ? 'pt-[60px] lg:pt-[50px] portrait:pt-[80px]' : ''} h-full p-3`}>
+      <div className={`transition-all duration-300 ${isHeaderVisible ? HEADER_VISIBLE_TOP_PADDING_CLASSES : ''} h-full p-3`}>
         <GalleryTagFilter
           tagOptions={tagOptions}
           activeTags={activeTags}
