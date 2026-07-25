@@ -309,8 +309,8 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
       if (restoreFlagTimeoutId !== undefined) {
         window.clearTimeout(restoreFlagTimeoutId);
       }
-      if (scrollerRef.current) {
-        delete scrollerRef.current.dataset.readerRestoreUntil;
+      if (scroller) {
+        delete scroller.dataset.readerRestoreUntil;
       }
     };
   }, [accessDeniedReason, content, fontSize, isDarkMode, params.bookId, params.chapter, scrollerRef, selectedFont]);
