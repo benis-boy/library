@@ -1,9 +1,11 @@
-import { Fragment, useContext, useEffect, useState } from 'react';
+import { Fragment, useContext, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LibraryContext } from '../context/LibraryContext';
 import { PatreonContext } from '../context/PatreonContext';
 import { Box, SwipeableDrawer, useMediaQuery, useTheme } from '@mui/material';
 import basicBookData from '../basicBookData';
+import { fetchNotificationSummary } from '../comments/comments-api';
+import { NotificationsModal } from './notifications-modal';
 
 const WebsiteHeader = ({
   isHeaderVisible,
@@ -26,6 +28,10 @@ const WebsiteHeader = ({
   const isPortrait = useMediaQuery('(orientation: portrait)');
 
   const [wasVisible, setWasVisible] = useState(isHeaderVisible);
+  const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
+  const [notificationLastCheckedAt, setNotificationLastCheckedAt] = useState(0);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [modalUnreadCutoff, setModalUnreadCutoff] = useState<number | null>(null);
 
   useEffect(() => {
     if (isHeaderVisible) setWasVisible(true);
@@ -35,10 +41,68 @@ const WebsiteHeader = ({
       }, 225);
   }, [isHeaderVisible]);
 
+  const isLoggedIn = pContext?.isLoggedIn ?? false;
+  const userInfo = pContext?.userInfo ?? null;
+  const signedUser = pContext?.signedUser ?? null;
+  const notificationOwner = useMemo(
+    () => (isLoggedIn && userInfo?.userName && signedUser ? { userName: userInfo.userName, signedUser } : null),
+    [isLoggedIn, signedUser, userInfo?.userName]
+  );
+
+  useEffect(() => {
+    if (!notificationOwner) {
+      setNotificationUnreadCount(0);
+      setNotificationLastCheckedAt(0);
+      setIsNotificationsOpen(false);
+      setModalUnreadCutoff(null);
+      return;
+    }
+
+    let cancelled = false;
+    void fetchNotificationSummary(notificationOwner)
+      .then((summary) => {
+        if (cancelled) {
+          return;
+        }
+        setNotificationUnreadCount(summary.unreadCount);
+        setNotificationLastCheckedAt(summary.lastCheckedAt);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setNotificationUnreadCount(0);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [notificationOwner]);
+
+  const refreshNotificationSummary = async () => {
+    if (!notificationOwner) {
+      return;
+    }
+
+    const summary = await fetchNotificationSummary(notificationOwner);
+    setNotificationUnreadCount(summary.unreadCount);
+    setNotificationLastCheckedAt(summary.lastCheckedAt);
+  };
+
+  const openNotifications = () => {
+    setModalUnreadCutoff((cutoff) => cutoff ?? notificationLastCheckedAt);
+    setIsNotificationsOpen(true);
+  };
+
+  const closeNotifications = () => {
+    setIsNotificationsOpen(false);
+    setModalUnreadCutoff(null);
+    void refreshNotificationSummary();
+  };
+
   if (!lContext) return <Fragment />;
   if (!pContext) return <Fragment />;
   const { libraryData: { selectedBook } } = lContext;
-  const { isLoggedIn, handleLogin, handleLogout, userInfo } = pContext;
+  const { handleLogin, handleLogout } = pContext;
   const title = basicBookData.find((bbd) => bbd.id === selectedBook)?.title ?? 'Error - book not found';
 
   return (
@@ -135,6 +199,34 @@ const WebsiteHeader = ({
           )}
           {isLoggedIn && (
             <div className="flex flex-col sm:flex-row sm:gap-2 items-center ">
+              {notificationOwner ? (
+                <button
+                  id="notification-bell"
+                  type="button"
+                  aria-label="Open reply notifications"
+                  className="relative flex h-10 w-10 items-center justify-center rounded-full bg-[#BE3144] text-white"
+                  onClick={openNotifications}
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="h-5 w-5"
+                  >
+                    <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" />
+                    <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                  </svg>
+                  {notificationUnreadCount > 0 ? (
+                    <span className="absolute -right-2 -top-2 min-w-5 rounded-full bg-white px-1 text-xs font-bold text-[#872341]">
+                      {notificationUnreadCount > 99 ? '99+' : notificationUnreadCount}
+                    </span>
+                  ) : null}
+                </button>
+              ) : null}
               <span id="patreon-username" className="ml-2 font-bold text-lg text-white portrait:text-[12px]">
                 User: <span className="portrait:text-[14px]">{userInfo?.userName}</span>
               </span>
@@ -145,6 +237,9 @@ const WebsiteHeader = ({
           )}
         </div>
       </Box>
+      {isNotificationsOpen && notificationOwner && modalUnreadCutoff !== null ? (
+        <NotificationsModal owner={notificationOwner} initialUnreadCutoff={modalUnreadCutoff} onClose={closeNotifications} />
+      ) : null}
     </SwipeableDrawer>
   );
 };

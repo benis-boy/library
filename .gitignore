@@ -31,6 +31,7 @@ __pycache__/
 secret.txt
 *_secret.txt
 *.webnovel.html
+*.secret
 
 # unrelated
 simple-tts

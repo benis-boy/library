@@ -1,13 +1,18 @@
 const crypto = require('crypto');
 
 const COMMENT_KEY_PREFIX = `comments:v1`;
+const NOTIFICATION_KEY_PREFIX = `notifications:v1`;
 const DEFAULT_REACTION_EMOJI = '❤️';
 const COMMENT_TEXT_MAX_LENGTH = 2000;
 const COMMENT_MEDIA_URL_MAX_LENGTH = 2048;
+const DEFAULT_NOTIFICATION_LIMIT = 5;
+const MAX_NOTIFICATION_LIMIT = 20;
+const NOTIFICATION_CLEANUP_KEEP_NEWEST = 10;
+const NOTIFICATION_CLEANUP_MAX_AGE_MS = 180 * 24 * 60 * 60 * 1000;
 
 const headers = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Comment-User-Name',
   'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
 };
 
@@ -78,6 +83,15 @@ const redisIncrementBy = async (key, increment) => {
   return redisCommand(['INCRBY', key, increment]);
 };
 
+const redisSetAdd = async (key, member) => {
+  await redisCommand(['SADD', key, member]);
+};
+
+const redisSetMembers = async (key) => {
+  const value = await redisCommand(['SMEMBERS', key]);
+  return Array.isArray(value) ? value.filter((member) => typeof member === 'string') : [];
+};
+
 const toPageLocationKey = (locationId) => `${locationId.bookId}:${locationId.chapterId}`;
 
 const toPageThreadKeysRedisKey = (locationId) => `${COMMENT_KEY_PREFIX}:page:${toPageLocationKey(locationId)}:thread-keys`;
@@ -94,6 +108,12 @@ const toThreadRedisKey = (thread) => {
 const toThreadCommentCountRedisKey = (threadKey) => `${threadKey}:comment-count`;
 
 const toCommentReactionsRedisKey = (commentId) => `${COMMENT_KEY_PREFIX}:comment:${commentId}:likes`;
+
+const toUserNotificationsRedisKey = (signedUser) => `${NOTIFICATION_KEY_PREFIX}:user:${signedUser}:items`;
+
+const toUserNotificationsLastCheckedRedisKey = (signedUser) => `${NOTIFICATION_KEY_PREFIX}:user:${signedUser}:last-checked-at`;
+
+const toNotificationUsersRedisKey = () => `${NOTIFICATION_KEY_PREFIX}:users`;
 
 const parseJsonBody = (event) => {
   if (!event.body) {
@@ -151,6 +171,28 @@ const getVerifiedMutationOwner = (mutationOwner) => {
     userName: mutationOwner.userName,
     signedUser: mutationOwner.signedUser,
   };
+};
+
+const getBearerToken = (authorization) => {
+  if (typeof authorization !== 'string') {
+    return null;
+  }
+
+  const match = authorization.match(/^Bearer\s+(.+)$/i);
+  return match?.[1]?.trim() || null;
+};
+
+const getNotificationAuth = (event) => {
+  const headerUserName = event.headers?.['x-comment-user-name'] ?? event.headers?.['X-Comment-User-Name'];
+  const authorization = event.headers?.authorization ?? event.headers?.Authorization;
+  const signedUser = getBearerToken(authorization);
+
+  if (typeof headerUserName !== 'string' || headerUserName.length === 0 || !signedUser) {
+    return null;
+  }
+
+  const mutationOwner = { userName: headerUserName, signedUser };
+  return isVerifiedMutationOwner(mutationOwner) ? mutationOwner : null;
 };
 
 const doMutationOwnersMatch = (left, right) => {
@@ -478,6 +520,115 @@ const getThreadsForLocation = async (threadKeys, locationId) => {
   return getThreadsByKeys(targetThreadKeys);
 };
 
+const parseNotification = (value) => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(value);
+    return parsed?.type === 'comment-reply' && typeof parsed.createdAt === 'number' ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
+const getNotificationLastCheckedAt = async (signedUser) => {
+  const value = await redisGet(toUserNotificationsLastCheckedRedisKey(signedUser));
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+};
+
+const getNotificationUnreadCount = async (signedUser, lastCheckedAt) => {
+  const count = await redisCommand(['ZCOUNT', toUserNotificationsRedisKey(signedUser), `(${lastCheckedAt}`, '+inf']);
+  return typeof count === 'number' && Number.isFinite(count) ? count : 0;
+};
+
+const getNotificationSummary = async (signedUser) => {
+  const lastCheckedAt = await getNotificationLastCheckedAt(signedUser);
+  const unreadCount = await getNotificationUnreadCount(signedUser, lastCheckedAt);
+  return { unreadCount, lastCheckedAt };
+};
+
+const getNotificationsList = async (signedUser, options = {}) => {
+  const limit = Math.min(Math.max(Number(options.limit) || DEFAULT_NOTIFICATION_LIMIT, 1), MAX_NOTIFICATION_LIMIT);
+  const before = Number(options.before);
+  const maxScore = Number.isFinite(before) && before > 0 ? `(${before}` : '+inf';
+  const rawItems = await redisCommand(['ZREVRANGEBYSCORE', toUserNotificationsRedisKey(signedUser), maxScore, '-inf', 'LIMIT', 0, limit + 1]);
+  const parsedItems = (Array.isArray(rawItems) ? rawItems : []).map(parseNotification).filter((item) => item !== null);
+  const items = parsedItems.slice(0, limit);
+  const summary = await getNotificationSummary(signedUser);
+
+  return {
+    items,
+    ...summary,
+    nextCursor: parsedItems.length > limit && items.length > 0 ? items[items.length - 1].createdAt : null,
+  };
+};
+
+const createNotificationId = (createdAt) => `notification-${createdAt.toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+
+const storeReplyNotification = async ({ recipientOwner, actorOwner, locationId, parentCommentId, replyCommentId }) => {
+  const createdAt = Date.now();
+  const notification = {
+    id: createNotificationId(createdAt),
+    type: 'comment-reply',
+    createdAt,
+    actorUserName: actorOwner?.userName ?? null,
+    locationId,
+    parentCommentId,
+    replyCommentId,
+  };
+
+  await redisCommand(['ZADD', toUserNotificationsRedisKey(recipientOwner.signedUser), createdAt, JSON.stringify(notification)]);
+  await redisSetAdd(toNotificationUsersRedisKey(), recipientOwner.signedUser);
+};
+
+const maybeCreateReplyNotification = async ({ wasNewComment, previousThread, mutation, mutationOwner }) => {
+  if (!wasNewComment) {
+    return;
+  }
+
+  const parentComment = previousThread.commentsById?.[mutation.replyingTo];
+  const parentOwner = parentComment?.mutationOwner ?? null;
+  if (!parentComment || !parentOwner || !isVerifiedMutationOwner(parentOwner) || doMutationOwnersMatch(parentOwner, mutationOwner)) {
+    return;
+  }
+
+  await storeReplyNotification({
+    recipientOwner: parentOwner,
+    actorOwner: mutationOwner,
+    locationId: previousThread.locationId,
+    parentCommentId: mutation.replyingTo,
+    replyCommentId: mutation.commentId,
+  });
+};
+
+const cleanupNotifications = async () => {
+  const signedUsers = await redisSetMembers(toNotificationUsersRedisKey());
+  const cutoff = Date.now() - NOTIFICATION_CLEANUP_MAX_AGE_MS;
+  let deletedNotifications = 0;
+
+  await Promise.all(
+    signedUsers.map(async (signedUser) => {
+      const inboxKey = toUserNotificationsRedisKey(signedUser);
+      const rawOldItems = await redisCommand(['ZRANGEBYSCORE', inboxKey, '-inf', `(${cutoff}`]);
+      const rawNewestItems = await redisCommand(['ZREVRANGE', inboxKey, 0, NOTIFICATION_CLEANUP_KEEP_NEWEST - 1]);
+      const keepNewest = new Set(Array.isArray(rawNewestItems) ? rawNewestItems : []);
+      const staleItems = (Array.isArray(rawOldItems) ? rawOldItems : []).filter((item) => !keepNewest.has(item));
+      if (staleItems.length === 0) {
+        return;
+      }
+
+      deletedNotifications += await redisCommand(['ZREM', inboxKey, ...staleItems]);
+    })
+  );
+
+  return {
+    scannedUsers: signedUsers.length,
+    deletedNotifications,
+  };
+};
+
 const getThreadsUpdatedResponse = async (pageLocationId, threadKeys, locationId) => {
   if (locationId?.paragraphLocation) {
     return {
@@ -622,6 +773,25 @@ const deleteCommentFromThread = (thread, mutation, mutationOwner) => {
 const handleGet = async (event) => {
   const query = event.queryStringParameters || {};
 
+  if (query.notifications === 'summary' || query.notifications === 'list') {
+    const owner = getNotificationAuth(event);
+    if (!owner) {
+      return json(401, { error: 'Invalid notification auth.' });
+    }
+
+    if (query.notifications === 'summary') {
+      return json(200, await getNotificationSummary(owner.signedUser));
+    }
+
+    return json(
+      200,
+      await getNotificationsList(owner.signedUser, {
+        before: query.before,
+        limit: query.limit,
+      })
+    );
+  }
+
   if (query.commentId || query.commentIds) {
     const commentIds = (query.commentIds || query.commentId)
       .split(',')
@@ -687,6 +857,33 @@ const handleGet = async (event) => {
 
 const handlePost = async (event) => {
   const request = parseJsonBody(event);
+
+  if (request?.notificationAction === 'mark-checked') {
+    if (!isMutationOwner(request.mutationOwner)) {
+      return json(400, { error: 'Expected a valid mutationOwner.' });
+    }
+
+    const mutationOwner = getVerifiedMutationOwner(request.mutationOwner);
+    if (!mutationOwner) {
+      return json(401, { error: 'Invalid comment user signature.' });
+    }
+
+    const lastCheckedAt = Date.now();
+    await redisSet(toUserNotificationsLastCheckedRedisKey(mutationOwner.signedUser), lastCheckedAt);
+    return json(200, {
+      lastCheckedAt,
+      unreadCount: await getNotificationUnreadCount(mutationOwner.signedUser, lastCheckedAt),
+    });
+  }
+
+  if (request?.notificationAction === 'cleanup') {
+    if (!process.env.NOTIFICATIONS_ADMIN_SECRET || request.adminSecret !== process.env.NOTIFICATIONS_ADMIN_SECRET) {
+      return json(403, { error: 'Invalid notification cleanup secret.' });
+    }
+
+    return json(200, await cleanupNotifications());
+  }
+
   if (!isPageLocationId(request?.pageLocationId) || !isThreadMutation(request?.mutation)) {
     return json(400, { error: 'Expected { pageLocationId, mutation } with a valid thread mutation.' });
   }
@@ -753,9 +950,13 @@ const handlePost = async (event) => {
       return json(result.error.startsWith('Only') ? 403 : 404, { error: result.error });
     }
 
+    const wasNewComment = !includesComment(entry.thread, mutation.commentId);
     await setThread(result.thread);
-    if (!includesComment(entry.thread, mutation.commentId)) {
+    if (wasNewComment) {
       await incrementThreadCommentCount(entry.threadKey, 1);
+      await maybeCreateReplyNotification({ wasNewComment, previousThread: entry.thread, mutation, mutationOwner }).catch((error) => {
+        console.error('Failed to create reply notification:', error);
+      });
     }
     return json(200, await getThreadsUpdatedResponse(pageLocationId, threadKeys, entry.thread.locationId));
   }

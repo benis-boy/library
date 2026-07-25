@@ -1,4 +1,14 @@
-import { CommentId, CommentReactions, PageLocationId, Thread, ThreadLocationId, ThreadMutation } from './dataModel';
+import {
+  Comment,
+  CommentId,
+  CommentReactions,
+  MutationOwner,
+  PageLocationId,
+  Thread,
+  ThreadLocationId,
+  ThreadMutation,
+  toThreadLocationKey,
+} from './dataModel';
 
 export type CommentsMutationResponse =
   | {
@@ -49,6 +59,28 @@ export type CommentReactionsForViewer = {
   reactionsByCommentId: Record<CommentId, CommentReactions>;
 };
 
+export type CommentReplyNotification = {
+  id: string;
+  type: 'comment-reply';
+  createdAt: number;
+  actorUserName: string | null;
+  locationId: ThreadLocationId;
+  parentCommentId: CommentId;
+  replyCommentId: CommentId;
+};
+
+export type NotificationsSummaryResponse = {
+  unreadCount: number;
+  lastCheckedAt: number;
+};
+
+export type NotificationsListResponse = {
+  items: CommentReplyNotification[];
+  unreadCount: number;
+  lastCheckedAt: number;
+  nextCursor: number | null;
+};
+
 const COMMENTS_FUNCTION_URL = 'https://mellow-kitsune-6578b2.netlify.app/.netlify/functions/comments';
 const DEFAULT_REACTION_EMOJI = '❤️';
 
@@ -89,6 +121,22 @@ const parseJsonResponse = async <T>(response: Response): Promise<T> => {
   }
 
   return data as T;
+};
+
+const requireSignedOwner = (owner: MutationOwner): Exclude<MutationOwner, null> => {
+  if (!owner) {
+    throw new Error('Signed-in user is required.');
+  }
+
+  return owner;
+};
+
+const getNotificationHeaders = (owner: MutationOwner) => {
+  const signedOwner = requireSignedOwner(owner);
+  return {
+    Authorization: `Bearer ${signedOwner.signedUser}`,
+    'X-Comment-User-Name': signedOwner.userName,
+  };
 };
 
 export const fetchThreadsForPage = async (pageLocationId: PageLocationId) => {
@@ -147,6 +195,93 @@ export const fetchCommentReactions = async (commentIds: CommentId[]): Promise<Co
   return {
     reactionsByCommentId: normalizeReactionsByCommentId(commentIds, reactionResponse),
   };
+};
+
+export const fetchNotificationSummary = async (owner: MutationOwner): Promise<NotificationsSummaryResponse> => {
+  const searchParams = new URLSearchParams({ notifications: 'summary' });
+  const response = await fetch(`${COMMENTS_FUNCTION_URL}?${searchParams.toString()}`, {
+    headers: getNotificationHeaders(owner),
+  });
+
+  return parseJsonResponse<NotificationsSummaryResponse>(response);
+};
+
+export const fetchNotifications = async (
+  owner: MutationOwner,
+  options: { before?: number; limit?: number } = {}
+): Promise<NotificationsListResponse> => {
+  const searchParams = new URLSearchParams({ notifications: 'list' });
+  if (options.before !== undefined) {
+    searchParams.set('before', String(options.before));
+  }
+  if (options.limit !== undefined) {
+    searchParams.set('limit', String(options.limit));
+  }
+
+  const response = await fetch(`${COMMENTS_FUNCTION_URL}?${searchParams.toString()}`, {
+    headers: getNotificationHeaders(owner),
+  });
+
+  return parseJsonResponse<NotificationsListResponse>(response);
+};
+
+export const markNotificationsChecked = async (owner: MutationOwner): Promise<NotificationsSummaryResponse> => {
+  const response = await fetch(COMMENTS_FUNCTION_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ notificationAction: 'mark-checked', mutationOwner: requireSignedOwner(owner) }),
+  });
+
+  return parseJsonResponse<NotificationsSummaryResponse>(response);
+};
+
+export const fetchCommentsForLocations = async (
+  requests: { locationId: ThreadLocationId; commentIds: CommentId[] }[]
+): Promise<Record<string, Record<CommentId, Comment | null>>> => {
+  const requestsByLocationKey = new Map<string, { locationId: ThreadLocationId; commentIds: Set<CommentId> }>();
+
+  for (const request of requests) {
+    const locationKey = toThreadLocationKey(request.locationId);
+    const existing = requestsByLocationKey.get(locationKey);
+    if (existing) {
+      for (const commentId of request.commentIds) {
+        existing.commentIds.add(commentId);
+      }
+      continue;
+    }
+
+    requestsByLocationKey.set(locationKey, {
+      locationId: request.locationId,
+      commentIds: new Set(request.commentIds),
+    });
+  }
+
+  const entries = await Promise.all(
+    Array.from(requestsByLocationKey.entries()).map(async ([locationKey, request]) => {
+      const threadsResponse = request.locationId.paragraphLocation
+        ? await fetchThreadsForLocation(request.locationId)
+        : await fetchThreadsForPage(request.locationId);
+      const commentsById: Record<CommentId, Comment | null> = {};
+
+      for (const commentId of request.commentIds) {
+        commentsById[commentId] = null;
+      }
+
+      for (const thread of threadsResponse.threads) {
+        for (const commentId of request.commentIds) {
+          if (commentsById[commentId] !== null) {
+            continue;
+          }
+
+          commentsById[commentId] = thread.commentsById[commentId] ?? null;
+        }
+      }
+
+      return [locationKey, commentsById] as const;
+    })
+  );
+
+  return Object.fromEntries(entries);
 };
 
 export const sendThreadMutation = async (pageLocationId: PageLocationId, mutation: ThreadMutation, options?: { keepalive?: boolean }) => {

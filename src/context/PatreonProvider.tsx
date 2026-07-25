@@ -14,10 +14,36 @@ import {
 } from '../storage/appStorage';
 
 const READER_HASH_PREFIX = '#/reader/';
+const DEFAULT_ENCRYPTION_PASSWORD_V2: Record<SourceType, string> = {
+  PSSJ: 'unused',
+  WtDR: 'unset',
+  SoWB: 'not-set'
+};
 
 const createOAuthNonce = () => `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 
 const isReaderHash = (value: string | null | undefined): value is string => typeof value === 'string' && value.startsWith(READER_HASH_PREFIX);
+
+const isLocalDevLoginEnabled = () => import.meta.env.DEV && /^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname);
+
+const loadLocalDevToken = async (): Promise<PatreonVerifierResponseBody | null> => {
+  if (!isLocalDevLoginEnabled()) {
+    return null;
+  }
+
+  try {
+    const module = await import('../../admin.secret?raw');
+    const raw = typeof module.default === 'string' ? module.default : null;
+    if (!raw) {
+      return null;
+    }
+
+    return JSON.parse(raw) as PatreonVerifierResponseBody;
+  } catch (error) {
+    console.error('Error loading local dev admin login:', error);
+    return null;
+  }
+};
 
 const restorePendingReaderRoute = (expectedNonce?: string | null) => {
   const pending = getPendingPatreonLogin();
@@ -45,11 +71,7 @@ export const PatreonProvider = ({ children }: { children: ReactNode }) => {
   const [signedUser, setSignedUser] = useState<string | null>(null);
   const [isAuthResolving, setIsAuthResolving] = useState(() => new URLSearchParams(window.location.search).has('code'));
   const [encryptionPassword, setEncryptionPassword] = useState('');
-  const [encryptionPasswordV2, setEncryptionPasswordV2] = useState<Record<SourceType, string>>({
-    PSSJ: 'unused',
-    WtDR: 'unset',
-    SoWB: 'not-set'
-  });
+  const [encryptionPasswordV2, setEncryptionPasswordV2] = useState<Record<SourceType, string>>(DEFAULT_ENCRYPTION_PASSWORD_V2);
 
   const CLIENT_ID = 'DCmpYjAt5oF-1poN2N_hW22VXTuz8BNIOPk1yeoctffuvobAJCu8I7N7fKc1ngMp';
   const REDIRECT_URI = 'https://benis-boy.github.io/library/';
@@ -63,10 +85,19 @@ export const PatreonProvider = ({ children }: { children: ReactNode }) => {
     setUserInfo(null);
     setSignedUser(null);
     setEncryptionPassword('');
+    setEncryptionPasswordV2(DEFAULT_ENCRYPTION_PASSWORD_V2);
+  }, []);
+
+  const applyAuthenticatedSession = useCallback((token: PatreonVerifierResponseBody) => {
+    const { userInfo, signedUser, encryption_password, encryption_passwordv2 } = token;
+    setStoredPatreonToken(token);
+    setUserInfo(userInfo);
+    setIsLoggedIn(true);
+    setSignedUser(signedUser);
+    setEncryptionPassword(encryption_password);
     setEncryptionPasswordV2({
-      PSSJ: 'unused',
-      WtDR: 'unset',
-      SoWB: 'not-set'
+      ...DEFAULT_ENCRYPTION_PASSWORD_V2,
+      ...encryption_passwordv2,
     });
   }, []);
 
@@ -95,7 +126,10 @@ export const PatreonProvider = ({ children }: { children: ReactNode }) => {
       setIsLoggedIn(true);
       setSignedUser(signedUser);
       setEncryptionPassword(encryption_password);
-      setEncryptionPasswordV2(encryption_passwordv2);
+      setEncryptionPasswordV2({
+        ...DEFAULT_ENCRYPTION_PASSWORD_V2,
+        ...encryption_passwordv2,
+      });
     }
   }, [resetSession]);
 
@@ -106,6 +140,22 @@ export const PatreonProvider = ({ children }: { children: ReactNode }) => {
 
   // Handle login
   const handleLogin = () => {
+    if (isLocalDevLoginEnabled()) {
+      setIsAuthResolving(true);
+      void loadLocalDevToken()
+        .then((token) => {
+          if (!token) {
+            return;
+          }
+
+          applyAuthenticatedSession(token);
+        })
+        .finally(() => {
+          setIsAuthResolving(false);
+        });
+      return;
+    }
+
     const nonce = createOAuthNonce();
     const currentHash = window.location.hash;
     if (isReaderHash(currentHash)) {
@@ -123,7 +173,7 @@ export const PatreonProvider = ({ children }: { children: ReactNode }) => {
   };
 
   // Handle OAuth callback after login
-  const handleAuthCode = async (authCode: string): Promise<boolean> => {
+  const handleAuthCode = useCallback(async (authCode: string): Promise<boolean> => {
     const response = await fetch('https://mellow-kitsune-6578b2.netlify.app/.netlify/functions/patreon-oauth', {
       // const response = await fetch('http://localhost:5178/patreon-oauth', {
       method: 'POST',
@@ -152,19 +202,13 @@ export const PatreonProvider = ({ children }: { children: ReactNode }) => {
       parsedData.encryption_passwordv2 &&
       typeof parsedData.encryption_password === 'string'
     ) {
-      const { userInfo, signedUser, encryption_password, encryption_passwordv2 } = parsedData as PatreonVerifierResponseBody;
-      setStoredPatreonToken(parsedData as PatreonVerifierResponseBody);
-      setUserInfo(userInfo);
-      setIsLoggedIn(true);
-      setSignedUser(signedUser);
-      setEncryptionPassword(encryption_password);
-      setEncryptionPasswordV2(encryption_passwordv2);
+      applyAuthenticatedSession(parsedData as PatreonVerifierResponseBody);
       return true;
     } else {
       console.error('Error:', data);
       return false;
     }
-  };
+  }, [applyAuthenticatedSession]);
 
   // Parse URL parameters
   useEffect(() => {
@@ -197,7 +241,7 @@ export const PatreonProvider = ({ children }: { children: ReactNode }) => {
     } else {
       setIsAuthResolving(false);
     }
-  }, [resetSession]);
+  }, [handleAuthCode, resetSession]);
 
   // One-Time force relogin
   useEffect(() => {

@@ -15,7 +15,7 @@ export type PatreonContextType = {
 export interface MembershipData {
   userName: string;
   supportsMe: boolean;
-  currently_entitled_tiers: object[]; // Adjust the type based on the actual structure of `currently_entitled_tiers`
+  currently_entitled_tiers?: object[]; // Adjust the type based on the actual structure of `currently_entitled_tiers`
 }
 export interface PatreonVerifierResponseBody {
   access_token: string;
@@ -25,7 +25,7 @@ export interface PatreonVerifierResponseBody {
   userInfo: MembershipData;
   signedUser: string;
   encryption_password: string;
-  encryption_passwordv2: Record<SourceType, string>;
+  encryption_passwordv2: Partial<Record<SourceType, string>>;
 }
 
 export const PatreonContext = createContext<PatreonContextType | undefined>(undefined);

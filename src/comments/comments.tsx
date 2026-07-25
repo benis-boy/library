@@ -332,6 +332,7 @@ export type ThreadProps = {
   thread: ThreadModel;
   className?: string;
   signedInUserName?: string | null;
+  highlightedCommentId?: CommentId;
   reactionsByCommentId?: Partial<Record<CommentId, Record<string, string[]>>>;
   showDiagnostics?: boolean;
   actionsDisabled?: boolean;
@@ -370,6 +371,7 @@ export const Thread = ({
   thread,
   className,
   signedInUserName,
+  highlightedCommentId,
   reactionsByCommentId = {},
   showDiagnostics = false,
   actionsDisabled = false,
@@ -426,7 +428,7 @@ export const Thread = ({
     const childIds = graph.treeChildIdsById.get(commentId) ?? [];
     const nextBranch = new Set(branch);
     nextBranch.add(commentId);
-    const shouldHighlight = Boolean(signedInUserName && comment.userName === signedInUserName);
+    const shouldHighlight = Boolean((signedInUserName && comment.userName === signedInUserName) || commentId === highlightedCommentId);
     const canEdit = Boolean(signedInUserName && comment.userName === signedInUserName);
     const canDelete = canEdit;
     const reactions = reactionsByCommentId[commentId] ?? {};

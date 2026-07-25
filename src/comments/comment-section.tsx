@@ -37,6 +37,7 @@ export type CommentSectionProps = {
   className?: string;
   header?: ReactNode;
   hideDefaultHeader?: boolean;
+  highlightedCommentId?: CommentId;
   onCommentCountChange?: (commentCount: number) => void;
 };
 
@@ -384,7 +385,14 @@ const CommentInput = ({
   );
 };
 
-export const CommentSection = ({ locationId, className, header, hideDefaultHeader = false, onCommentCountChange }: CommentSectionProps) => {
+export const CommentSection = ({
+  locationId,
+  className,
+  header,
+  hideDefaultHeader = false,
+  highlightedCommentId,
+  onCommentCountChange,
+}: CommentSectionProps) => {
   const patreonContext = useContext(PatreonContext);
   const { isDarkMode } = useContext(ConfigurationContext);
   const pageLocationId = useMemo(() => normalizePageLocation(locationId), [locationId]);
@@ -792,6 +800,19 @@ export const CommentSection = ({ locationId, className, header, hideDefaultHeade
     }
   };
 
+  useEffect(() => {
+    if (!highlightedCommentId || isLoading) {
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      const element = document.querySelector(`[data-comment-id="${CSS.escape(highlightedCommentId)}"]`);
+      element?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [highlightedCommentId, isLoading, threads]);
+
   return (
     <section className={`mx-auto w-full max-w-3xl ${className ?? ''}`}>
       {header ??
@@ -826,6 +847,7 @@ export const CommentSection = ({ locationId, className, header, hideDefaultHeade
             key={thread.rootCommentId}
             thread={thread}
             signedInUserName={signedInUserName}
+            highlightedCommentId={highlightedCommentId}
             reactionsByCommentId={reactionsByCommentId}
             actionsDisabled={isSubmitting}
             onReply={({ replyToCommentId }) => {

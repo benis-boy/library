@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { getGalleryManifestPath } from '../cacheVersioning';
 import { CommentSection } from '../comments/comment-section';
 import { fetchPageCommentSummary } from '../comments/comments-api';
@@ -24,6 +24,7 @@ import {
 
 export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLDivElement | null> }) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const params = useParams<{ bookId?: string; chapter?: string }>();
   const { isDarkMode, selectedFont, fontSize } = useContext(ConfigurationContext);
   const lContext = useContext(LibraryContext);
@@ -49,6 +50,22 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
   } = lContext || {};
 
   const baseUrl = import.meta.env.BASE_URL;
+  const commentTarget = useMemo(() => {
+    const searchParams = new URLSearchParams(location.search);
+    const commentId = searchParams.get('commentId');
+    const rawParagraphLocation = searchParams.get('paragraphLocation');
+    let paragraphLocation = null;
+
+    if (rawParagraphLocation) {
+      try {
+        paragraphLocation = JSON.parse(rawParagraphLocation);
+      } catch {
+        paragraphLocation = null;
+      }
+    }
+
+    return commentId ? { commentId, paragraphLocation } : null;
+  }, [location.search]);
 
   useEffect(() => {
     setIsReaderFrameReady(accessDeniedReason !== null);
@@ -76,7 +93,7 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
           getStoredSelectedChapter(routeBook);
 
         if (activeChapter) {
-          const currentPath = window.location.hash.replace(/^#/, '') || '/';
+          const currentPath = (window.location.hash.replace(/^#/, '') || '/').split('?')[0];
           const targetPath = await getReaderRouteForChapter(routeBook, activeChapter).catch(() =>
             getReaderRoute(routeBook, activeChapter)
           );
@@ -94,7 +111,7 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
             return;
           }
 
-          const currentPath = window.location.hash.replace(/^#/, '') || '/';
+          const currentPath = (window.location.hash.replace(/^#/, '') || '/').split('?')[0];
           const targetPath = await getReaderRouteForChapter(routeBook, firstSelectedChapter).catch(() =>
             getReaderRoute(routeBook, firstSelectedChapter)
           );
@@ -105,12 +122,12 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
         return;
       }
 
-      const currentPath = window.location.hash.replace(/^#/, '') || '/';
+      const currentPath = (window.location.hash.replace(/^#/, '') || '/').split('?')[0];
       const canonicalPath = await getReaderRouteForChapter(routeInfo.book, routeInfo.chapter).catch(() =>
         getReaderRoute(routeInfo.book, routeInfo.chapter)
       );
       if (!cancelled && currentPath !== canonicalPath) {
-        navigate(canonicalPath, { replace: true });
+        navigate(`${canonicalPath}${location.search}`, { replace: true });
         return;
       }
 
@@ -133,6 +150,7 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
   }, [
     accessDeniedReason,
     content,
+    location.search,
     navigate,
     params.bookId,
     params.chapter,
@@ -176,7 +194,7 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
   useEffect(() => {
     const routeInfo = parseReaderRoute(params.bookId, params.chapter);
     const scroller = scrollerRef.current;
-    if (!routeInfo || !scroller || (!content && !accessDeniedReason)) {
+    if (!routeInfo || !scroller || (!content && !accessDeniedReason) || commentTarget) {
       return;
     }
 
@@ -313,7 +331,7 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
         delete scroller.dataset.readerRestoreUntil;
       }
     };
-  }, [accessDeniedReason, content, fontSize, isDarkMode, params.bookId, params.chapter, scrollerRef, selectedFont]);
+  }, [accessDeniedReason, commentTarget, content, fontSize, isDarkMode, params.bookId, params.chapter, scrollerRef, selectedFont]);
 
   useEffect(() => {
     if (iframeRef.current) {
@@ -514,16 +532,38 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
   );
 
   const routeInfo = parseReaderRoute(params.bookId, params.chapter);
-  const commentLocation: PageLocationId | null = routeInfo
-    ? { bookId: routeInfo.book, chapterId: routeInfo.chapter }
-    : selectedChapter
-      ? { bookId: selectedBook, chapterId: selectedChapter }
-      : null;
+  const commentLocation: PageLocationId | null = useMemo(
+    () =>
+      routeInfo
+        ? { bookId: routeInfo.book, chapterId: routeInfo.chapter }
+        : selectedChapter
+          ? { bookId: selectedBook, chapterId: selectedChapter }
+          : null,
+    [routeInfo, selectedBook, selectedChapter]
+  );
   const chapterCommentLocationKey = commentLocation ? `${commentLocation.bookId}:${commentLocation.chapterId}` : null;
 
   useEffect(() => {
     setShouldLoadChapterComments(false);
   }, [chapterCommentLocationKey]);
+
+  useEffect(() => {
+    if (!commentTarget || !commentLocation) {
+      return;
+    }
+
+    if (commentTarget.paragraphLocation) {
+      const targetLocation = {
+        ...commentLocation,
+        paragraphLocation: commentTarget.paragraphLocation,
+      };
+      setParagraphCommentLocation(targetLocation);
+      setActiveParagraphCommentCount(paragraphCommentCounts[commentTarget.paragraphLocation.paragraphIndex] ?? 0);
+      return;
+    }
+
+    setShouldLoadChapterComments(true);
+  }, [commentLocation, commentTarget, paragraphCommentCounts]);
 
   useEffect(() => {
     if (shouldLoadChapterComments || !chapterCommentLocationKey || !isReaderFrameReady) {
@@ -640,7 +680,7 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
           <>
             <div ref={chapterCommentsSentinelRef} className="mt-8 h-px w-full" aria-hidden="true" />
             {shouldLoadChapterComments ? (
-              <CommentSection locationId={commentLocation} className="mb-4" />
+              <CommentSection locationId={commentLocation} className="mb-4" highlightedCommentId={commentTarget?.commentId} />
             ) : (
               <section
                 className={`mx-auto mb-4 w-full max-w-3xl rounded-2xl border px-4 py-5 ${
@@ -692,6 +732,7 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
             <CommentSection
               locationId={paragraphCommentLocation}
               hideDefaultHeader
+              highlightedCommentId={commentTarget?.commentId}
               onCommentCountChange={handleParagraphModalCommentCountChange}
             />
           </div>
