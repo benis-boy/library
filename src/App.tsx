@@ -49,6 +49,7 @@ export function InnerApp() {
   const drawerRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
   const lastScrollY = useRef(0);
+  const lastScrollMaxY = useRef(0);
   const scrollSaveTimeoutRef = useRef<number | undefined>(undefined);
 
   const activeReaderRoute = useMemo(() => {
@@ -105,26 +106,41 @@ export function InnerApp() {
 
   const handleScroll = useCallback(
     (e: React.UIEvent<HTMLDivElement, UIEvent>) => {
-      const y = e.currentTarget.scrollTop;
-      const restoreUntil = Number(e.currentTarget.dataset.readerRestoreUntil || 0);
+      const scroller = e.currentTarget;
+      const y = scroller.scrollTop;
+      const maxScrollY = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+      const previousY = lastScrollY.current;
+      const previousMaxScrollY = lastScrollMaxY.current;
+      const restoreUntil = Number(scroller.dataset.readerRestoreUntil || 0);
       if (restoreUntil > Date.now()) {
         lastScrollY.current = y;
+        lastScrollMaxY.current = maxScrollY;
         return;
       }
 
-      scheduleReaderScrollSave(e.currentTarget);
-      if (y > lastScrollY.current) {
+      scheduleReaderScrollSave(scroller);
+      const nearBottomClamp =
+        !hasTouch &&
+        isReaderRoute &&
+        !isHeaderVisible &&
+        previousMaxScrollY > 0 &&
+        previousY >= previousMaxScrollY - 2 &&
+        maxScrollY < previousMaxScrollY &&
+        y >= maxScrollY - 2;
+
+      if (y > previousY) {
         if (isReaderRoute) {
           setIsHeaderVisible(false);
         }
-      } else if (y < lastScrollY.current) {
+      } else if (y < previousY && !nearBottomClamp) {
         if (!hasTouch) {
           setIsHeaderVisible(true);
         }
       }
       lastScrollY.current = y;
+      lastScrollMaxY.current = maxScrollY;
     },
-    [hasTouch, isReaderRoute, scheduleReaderScrollSave]
+    [hasTouch, isHeaderVisible, isReaderRoute, scheduleReaderScrollSave]
   );
 
   useEffect(() => {
@@ -187,7 +203,7 @@ export function InnerApp() {
           marginTop: isHeaderVisible ? 0 : `${hasTouch ? 0 : -headerHeight}px`,
           transition: 'all 0.3s ease',
         }}
-        className={`duration-300 flex flex-col overflow-auto ${isHeaderVisible ? HEADER_VISIBLE_SCROLLER_CLASSES : 'max-h-[100vh] min-h-[100vh]'}`}
+        className={`app-scroll-container duration-300 flex flex-col overflow-auto ${isHeaderVisible ? HEADER_VISIBLE_SCROLLER_CLASSES : 'max-h-[100vh] min-h-[100vh]'}`}
         onScroll={handleScroll}
       >
         <Suspense fallback={null}>

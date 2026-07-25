@@ -1,5 +1,6 @@
 import { Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle, TextField } from '@mui/material';
 import { useContext, useEffect, useState } from 'react';
+import { getAppDialogSlotProps } from '../components/general/app-dialog';
 import { ConfigurationContext } from '../context/ConfigurationContext';
 import { COMMENT_MEDIA_URL_MAX_LENGTH } from './dataModel';
 import imageInputUrl from './image-input.svg';
@@ -125,26 +126,13 @@ export const EmbeddedMediaInput = ({ disabled = false, onAttach }: EmbeddedMedia
         <img src={imageInputUrl} alt="" className={`h-5 w-5 ${isDarkMode ? 'invert' : ''}`} aria-hidden="true" />
       </button>
 
-      <Dialog
-        open={open}
-        onClose={close}
-        fullWidth
-        maxWidth="sm"
-        slotProps={{
-          paper: {
-            sx: isDarkMode
-              ? {
-                  backgroundColor: '#0f172a',
-                  border: '1px solid #334155',
-                  color: '#f1f5f9',
-                }
-              : undefined,
-          },
-          backdrop: {
-            sx: isDarkMode ? { backgroundColor: 'rgba(0, 0, 0, 0.7)' } : undefined,
-          },
-        }}
-      >
+        <Dialog
+          open={open}
+          onClose={close}
+          fullWidth
+          maxWidth="sm"
+          slotProps={getAppDialogSlotProps({ isDarkMode })}
+        >
         <DialogTitle sx={isDarkMode ? { color: '#f1f5f9' } : undefined}>Attach image</DialogTitle>
         <DialogContent className="space-y-4" sx={isDarkMode ? { color: '#cbd5e1' } : undefined}>
           <DialogContentText sx={isDarkMode ? { color: '#cbd5e1' } : undefined}>

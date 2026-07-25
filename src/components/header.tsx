@@ -104,27 +104,13 @@ const WebsiteHeader = ({
     };
   }, [isAccountMenuOpen]);
 
-  const refreshNotificationSummary = async () => {
-    if (!notificationOwner) {
-      return;
-    }
-
-    const summary = await fetchNotificationSummary(notificationOwner);
-    setNotificationUnreadCount(summary.unreadCount);
-    setNotificationLastCheckedAt(summary.lastCheckedAt);
-  };
-
   const openNotifications = () => {
     setModalUnreadCutoff((cutoff) => cutoff ?? notificationLastCheckedAt);
     setIsNotificationsOpen(true);
   };
 
-  const closeNotifications = (options?: { preserveUnreadCutoff?: boolean }) => {
+  const closeNotifications = (_options?: { preserveUnreadCutoff?: boolean }) => {
     setIsNotificationsOpen(false);
-    if (!options?.preserveUnreadCutoff) {
-      setModalUnreadCutoff(null);
-    }
-    void refreshNotificationSummary();
   };
 
   if (!lContext) return <Fragment />;
@@ -139,7 +125,8 @@ const WebsiteHeader = ({
   };
 
   return (
-    <SwipeableDrawer
+    <>
+      <SwipeableDrawer
       sx={{
         transition: !isHeaderVisible ? '' : 'all 0.225s ease',
         width: '100%',
@@ -306,10 +293,20 @@ const WebsiteHeader = ({
           )}
         </div>
       </Box>
-      {isNotificationsOpen && notificationOwner && modalUnreadCutoff !== null ? (
-        <NotificationsModal owner={notificationOwner} initialUnreadCutoff={modalUnreadCutoff} onClose={closeNotifications} />
+      </SwipeableDrawer>
+      {notificationOwner && modalUnreadCutoff !== null ? (
+        <NotificationsModal
+          open={isNotificationsOpen}
+          owner={notificationOwner}
+          initialUnreadCutoff={modalUnreadCutoff}
+          onClose={closeNotifications}
+          onSummaryChange={({ unreadCount, lastCheckedAt }) => {
+            setNotificationUnreadCount(unreadCount);
+            setNotificationLastCheckedAt(lastCheckedAt);
+          }}
+        />
       ) : null}
-    </SwipeableDrawer>
+    </>
   );
 };
 

@@ -1,6 +1,7 @@
 import { Button, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle } from '@mui/material';
 import EmojiPicker, { Theme } from 'emoji-picker-react';
 import { ReactNode, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { getAppDialogSlotProps } from '../components/general/app-dialog';
 import { ConfigurationContext } from '../context/ConfigurationContext';
 import { PatreonContext } from '../context/PatreonContext';
 import { Thread as ThreadView } from './comments';
@@ -428,6 +429,7 @@ export const CommentSection = ({
   const pageLocationIdRef = useRef(pageLocationId);
   const flushPendingReactionsRef = useRef<FlushPendingReactions>(() => {});
   const lastHandledHighlightKeyRef = useRef<string | null>(null);
+  const sectionRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     signedInUserNameRef.current = signedInUserName;
@@ -825,7 +827,7 @@ export const CommentSection = ({
 
     setTemporaryHighlightedCommentId(highlightedCommentId);
     const frameId = window.requestAnimationFrame(() => {
-      const element = document.querySelector(`[data-comment-id="${CSS.escape(highlightedCommentId)}"]`);
+      const element = sectionRef.current?.querySelector(`[data-comment-id="${CSS.escape(highlightedCommentId)}"]`);
       element?.scrollIntoView({ block: 'center', behavior: 'smooth' });
     });
 
@@ -840,7 +842,7 @@ export const CommentSection = ({
   }, [highlightedCommentId, isLoading, locationLoadKey]);
 
   return (
-    <section className={`mx-auto w-full max-w-3xl ${className ?? ''}`}>
+    <section ref={sectionRef} className={`mx-auto w-full max-w-3xl ${className ?? ''}`}>
       {header ??
         (!hideDefaultHeader ? (
           <header className="flex items-center justify-between gap-1">
@@ -930,23 +932,7 @@ export const CommentSection = ({
       <Dialog
         open={pendingDeleteCommentId !== null}
         onClose={() => setPendingDeleteCommentId(null)}
-        slotProps={{
-          root: {
-            sx: { zIndex: 2300 },
-          },
-          paper: {
-            sx: isDarkMode
-              ? {
-                  backgroundColor: '#0f172a',
-                  border: '1px solid #334155',
-                  color: '#f1f5f9',
-                }
-              : undefined,
-          },
-          backdrop: {
-            sx: isDarkMode ? { backgroundColor: 'rgba(0, 0, 0, 0.7)' } : undefined,
-          },
-        }}
+        slotProps={getAppDialogSlotProps({ isDarkMode, zIndex: 2300 })}
       >
         <DialogTitle sx={isDarkMode ? { color: '#f1f5f9' } : undefined}>Delete comment?</DialogTitle>
         <DialogContent sx={isDarkMode ? { color: '#cbd5e1' } : undefined}>

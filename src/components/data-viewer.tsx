@@ -1,12 +1,14 @@
+import { Dialog } from '@mui/material';
 import { Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { getGalleryManifestPath } from '../cacheVersioning';
 import { CommentSection } from '../comments/comment-section';
 import { fetchPageCommentSummary } from '../comments/comments-api';
 import { PageLocationId, ThreadLocationId } from '../comments/dataModel';
-import { createParagraphLocation, type Paragraph } from '../comments/paragraph-comments/paragraph-locator';
+import { createParagraphLocation, findParagraphDev, type Paragraph, type ParagraphLocation } from '../comments/paragraph-comments/paragraph-locator';
 import { ConfigurationContext } from '../context/ConfigurationContext';
 import dataViewerIframeScript from './data-viewer-iframe-script.js?raw';
+import { getAppDialogSlotProps } from './general/app-dialog';
 import AccessRestrictedMessage from './notLoggedIn';
 import PatreonMessage from './notASupporter';
 import { ImageLightbox } from './gallery/ImageLightbox';
@@ -38,7 +40,9 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
   const [activeParagraphCommentCount, setActiveParagraphCommentCount] = useState(0);
   const [isReaderFrameReady, setIsReaderFrameReady] = useState(false);
   const [shouldLoadChapterComments, setShouldLoadChapterComments] = useState(false);
+  const [pendingParagraphScrollTargetKey, setPendingParagraphScrollTargetKey] = useState<string | null>(null);
   const lastRouteKeyRef = useRef<string | null>(null);
+  const nextCommentTargetRequestIdRef = useRef(1);
   const handledCommentTargetKeyRef = useRef<string | null>(null);
   const lastParagraphScrollTargetKeyRef = useRef<string | null>(null);
   const {
@@ -51,6 +55,10 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
     setSelectedBook,
     setSelectedChapter,
   } = lContext || {};
+
+  const logParagraphNavigation = useCallback((eventName: string, details?: Record<string, unknown>) => {
+    console.log('[ParagraphComments][DataViewer]', eventName, details || {});
+  }, []);
 
   const baseUrl = import.meta.env.BASE_URL;
   const parsedCommentTarget = useMemo(() => {
@@ -69,15 +77,28 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
 
     return commentId ? { commentId, paragraphLocation } : null;
   }, [location.search]);
-  const [activeCommentTarget, setActiveCommentTarget] = useState<typeof parsedCommentTarget>(null);
+  type ActiveCommentTarget = NonNullable<typeof parsedCommentTarget> & { requestId: number };
+  const [activeCommentTarget, setActiveCommentTarget] = useState<ActiveCommentTarget | null>(null);
   const routeInfo = useMemo(() => parseReaderRoute(params.bookId, params.chapter), [params.bookId, params.chapter]);
+
+  const createActiveCommentTarget = useCallback(
+    (target: NonNullable<typeof parsedCommentTarget>): ActiveCommentTarget => ({
+      ...target,
+      requestId: nextCommentTargetRequestIdRef.current++,
+    }),
+    []
+  );
 
   useEffect(() => {
     if (!parsedCommentTarget) {
       return;
     }
 
-    setActiveCommentTarget(parsedCommentTarget);
+    logParagraphNavigation('parsed-comment-target', {
+      commentId: parsedCommentTarget.commentId,
+      paragraphLocation: parsedCommentTarget.paragraphLocation ?? null,
+    });
+    setActiveCommentTarget(createActiveCommentTarget(parsedCommentTarget));
 
     const searchParams = new URLSearchParams(location.search);
     searchParams.delete('commentId');
@@ -90,7 +111,7 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
       },
       { replace: true }
     );
-  }, [location.pathname, location.search, navigate, parsedCommentTarget]);
+  }, [createActiveCommentTarget, location.pathname, location.search, logParagraphNavigation, navigate, parsedCommentTarget]);
 
   useEffect(() => {
     const routeKey = `${params.bookId ?? ''}:${params.chapter ?? ''}`;
@@ -101,15 +122,21 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
 
     if (lastRouteKeyRef.current !== routeKey) {
       lastRouteKeyRef.current = routeKey;
-      setActiveCommentTarget(parsedCommentTarget ?? null);
+      setActiveCommentTarget(parsedCommentTarget ? createActiveCommentTarget(parsedCommentTarget) : null);
       return;
     }
 
     lastRouteKeyRef.current = routeKey;
-  }, [params.bookId, params.chapter, parsedCommentTarget]);
+  }, [createActiveCommentTarget, params.bookId, params.chapter, parsedCommentTarget]);
 
   useEffect(() => {
     setIsReaderFrameReady(accessDeniedReason !== null);
+    logParagraphNavigation('frame-ready-reset', {
+      accessDeniedReason,
+      nextReadyState: accessDeniedReason !== null,
+      bookId: params.bookId ?? null,
+      chapter: params.chapter ?? null,
+    });
   }, [accessDeniedReason, content, params.bookId, params.chapter]);
 
   useEffect(() => {
@@ -587,14 +614,106 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
 
     return `${commentLocation.bookId}:${commentLocation.chapterId}:${activeCommentTarget.commentId}:${
       activeCommentTarget.paragraphLocation ? JSON.stringify(activeCommentTarget.paragraphLocation) : 'chapter'
-    }`;
+    }:${activeCommentTarget.requestId}`;
   }, [activeCommentTarget, commentLocation]);
+  const chapterHighlightedCommentId = activeCommentTarget && !activeCommentTarget.paragraphLocation ? activeCommentTarget.commentId : undefined;
+  const paragraphHighlightedCommentId = activeCommentTarget?.paragraphLocation ? activeCommentTarget.commentId : undefined;
+
+  const resolveParagraphElement = useCallback(
+    (iframeDocument: Document, paragraphLocation: ParagraphLocation) => {
+      const paragraphElements = Array.from(iframeDocument.querySelectorAll('p[data-paragraph-index]'));
+      const paragraphs = paragraphElements.map((paragraph) => ({ content: paragraph.textContent?.trim() ?? '' }));
+      const locationForLookup: ParagraphLocation = {
+        ...paragraphLocation,
+        tertiaryKey: { ...paragraphLocation.tertiaryKey },
+      };
+
+      const matchedParagraph = findParagraphDev(locationForLookup, paragraphs);
+      if (!matchedParagraph) {
+        logParagraphNavigation('resolve-paragraph-failed', {
+          paragraphIndex: paragraphLocation.paragraphIndex,
+          paragraphCount: paragraphElements.length,
+        });
+        return null;
+      }
+
+      const matchedIndex = paragraphs.indexOf(matchedParagraph);
+      if (matchedIndex < 0) {
+        logParagraphNavigation('resolve-paragraph-missing-index', {
+          paragraphIndex: paragraphLocation.paragraphIndex,
+          paragraphCount: paragraphElements.length,
+        });
+        return null;
+      }
+
+      logParagraphNavigation('resolve-paragraph-success', {
+        requestedParagraphIndex: paragraphLocation.paragraphIndex,
+        resolvedParagraphIndex: matchedIndex,
+        healedParagraphIndex: locationForLookup.paragraphIndex,
+      });
+      return paragraphElements[matchedIndex] ?? null;
+    },
+    [logParagraphNavigation]
+  );
+
+  const flushPendingParagraphScroll = useCallback(() => {
+    if (!activeCommentTarget?.paragraphLocation || !activeCommentTargetKey || pendingParagraphScrollTargetKey !== activeCommentTargetKey) {
+      logParagraphNavigation('flush-skipped', {
+        hasParagraphLocation: Boolean(activeCommentTarget?.paragraphLocation),
+        activeCommentTargetKey,
+        pendingParagraphScrollTargetKey,
+      });
+      return false;
+    }
+
+    const iframe = iframeRef.current;
+    const scroller = scrollerRef.current;
+    const iframeDocument = iframe?.contentDocument;
+    if (!iframe || !scroller || !iframeDocument) {
+      logParagraphNavigation('flush-blocked-not-ready', {
+        hasIframe: Boolean(iframe),
+        hasScroller: Boolean(scroller),
+        hasIframeDocument: Boolean(iframeDocument),
+        iframeReadyState: iframeDocument?.readyState ?? null,
+      });
+      return false;
+    }
+
+    const paragraph = resolveParagraphElement(iframeDocument, activeCommentTarget.paragraphLocation);
+    if (!paragraph) {
+      logParagraphNavigation('flush-blocked-missing-paragraph', {
+        paragraphIndex: activeCommentTarget.paragraphLocation.paragraphIndex,
+        paragraphCount: iframeDocument.querySelectorAll('p[data-paragraph-index]').length,
+        hasParagraph: Boolean(paragraph),
+      });
+      return false;
+    }
+
+    logParagraphNavigation('flush-success', {
+      paragraphIndex: activeCommentTarget.paragraphLocation.paragraphIndex,
+      targetKey: activeCommentTargetKey,
+    });
+    lastParagraphScrollTargetKeyRef.current = activeCommentTargetKey;
+    iframeDocument.querySelectorAll('p.paragraph-comment-target').forEach((element) => {
+      if (element !== paragraph) {
+        element.classList.remove('paragraph-comment-target');
+      }
+    });
+    paragraph.classList.add('paragraph-comment-target');
+    scrollIframeParagraphIntoScroller(scroller, iframe, paragraph);
+    setPendingParagraphScrollTargetKey(null);
+    return true;
+  }, [activeCommentTarget, activeCommentTargetKey, logParagraphNavigation, pendingParagraphScrollTargetKey, resolveParagraphElement, scrollerRef]);
 
   useEffect(() => {
     setShouldLoadChapterComments(false);
+    setPendingParagraphScrollTargetKey(null);
     handledCommentTargetKeyRef.current = null;
     lastParagraphScrollTargetKeyRef.current = null;
-  }, [chapterCommentLocationKey]);
+    logParagraphNavigation('location-reset', {
+      chapterCommentLocationKey,
+    });
+  }, [chapterCommentLocationKey, logParagraphNavigation]);
 
   useEffect(() => {
     if (!activeCommentTarget || !commentLocation || !isReaderFrameReady || !activeCommentTargetKey) {
@@ -602,6 +721,9 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
     }
 
     if (handledCommentTargetKeyRef.current === activeCommentTargetKey) {
+      logParagraphNavigation('target-already-handled', {
+        activeCommentTargetKey,
+      });
       return;
     }
 
@@ -612,8 +734,13 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
         ...commentLocation,
         paragraphLocation: activeCommentTarget.paragraphLocation,
       };
+      logParagraphNavigation('queue-paragraph-target', {
+        activeCommentTargetKey,
+        paragraphIndex: activeCommentTarget.paragraphLocation.paragraphIndex,
+      });
       setParagraphCommentLocation(targetLocation);
       setActiveParagraphCommentCount(paragraphCommentCounts[activeCommentTarget.paragraphLocation.paragraphIndex] ?? 0);
+      setPendingParagraphScrollTargetKey(activeCommentTargetKey);
       return;
     }
 
@@ -625,40 +752,31 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
         scrollElementIntoScroller(scroller, sentinel);
       });
     }
-  }, [activeCommentTarget, activeCommentTargetKey, commentLocation, isReaderFrameReady, paragraphCommentCounts, scrollerRef]);
+  }, [activeCommentTarget, activeCommentTargetKey, commentLocation, isReaderFrameReady, logParagraphNavigation, paragraphCommentCounts, scrollerRef]);
 
   useEffect(() => {
-    if (!activeCommentTarget?.paragraphLocation || !activeCommentTargetKey || !commentLocation || !isReaderFrameReady) {
+    if (!isReaderFrameReady || !pendingParagraphScrollTargetKey) {
       return;
     }
 
-    if (lastParagraphScrollTargetKeyRef.current === activeCommentTargetKey) {
+    if (lastParagraphScrollTargetKeyRef.current === pendingParagraphScrollTargetKey) {
+      logParagraphNavigation('flush-skipped-already-scrolled', {
+        pendingParagraphScrollTargetKey,
+      });
       return;
     }
 
-    const iframe = iframeRef.current;
-    const scroller = scrollerRef.current;
-    const iframeDocument = iframe?.contentDocument;
-    if (!iframe || !scroller || !iframeDocument) {
-      return;
-    }
-
-    const paragraph = iframeDocument.querySelector(
-      `p[data-paragraph-index="${activeCommentTarget.paragraphLocation.paragraphIndex}"]`
-    );
-    if (!(paragraph instanceof HTMLElement)) {
-      return;
-    }
-
-    lastParagraphScrollTargetKeyRef.current = activeCommentTargetKey;
-    iframeDocument.querySelectorAll('p.paragraph-comment-target').forEach((element) => {
-      if (element !== paragraph) {
-        element.classList.remove('paragraph-comment-target');
-      }
+    logParagraphNavigation('flush-scheduled-from-effect', {
+      pendingParagraphScrollTargetKey,
     });
-    paragraph.classList.add('paragraph-comment-target');
-    scrollIframeParagraphIntoScroller(scroller, iframe, paragraph);
-  }, [activeCommentTarget, activeCommentTargetKey, commentLocation, isReaderFrameReady, scrollerRef]);
+    const frameId = window.requestAnimationFrame(() => {
+      flushPendingParagraphScroll();
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [flushPendingParagraphScroll, isReaderFrameReady, logParagraphNavigation, pendingParagraphScrollTargetKey]);
 
   useEffect(() => {
     if (shouldLoadChapterComments || !chapterCommentLocationKey || !isReaderFrameReady) {
@@ -707,11 +825,15 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
     )
   ) : (
     <div className="w-full flex">
-      <iframe
-        ref={iframeRef}
-        onLoad={() => {
-          injectStyles(iframeRef, { isDarkMode, selectedFont, fontSize });
-          setIsReaderFrameReady(true);
+        <iframe
+          ref={iframeRef}
+          onLoad={() => {
+            logParagraphNavigation('iframe-onload', {
+              pendingParagraphScrollTargetKey,
+              contentLength: content.length,
+            });
+            injectStyles(iframeRef, { isDarkMode, selectedFont, fontSize });
+            setIsReaderFrameReady(true);
           iframeRef.current?.contentWindow?.postMessage(
             {
               type: 'paragraph-comment-counts-updated',
@@ -719,6 +841,12 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
             },
             '*'
           );
+          window.requestAnimationFrame(() => {
+            logParagraphNavigation('flush-scheduled-from-onload', {
+              pendingParagraphScrollTargetKey,
+            });
+            flushPendingParagraphScroll();
+          });
         }}
         srcDoc={`<html><body style="margin: 0;margin-top: -16px;margin-bottom: -16px;"><div style="height:100%">${content}</div></html></body>`}
         className="flex-grow"
@@ -775,7 +903,7 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
           <>
             <div ref={chapterCommentsSentinelRef} className="mt-8 h-px w-full" aria-hidden="true" />
             {shouldLoadChapterComments ? (
-              <CommentSection locationId={commentLocation} className="mb-4" highlightedCommentId={activeCommentTarget?.commentId} />
+              <CommentSection locationId={commentLocation} className="mb-4" highlightedCommentId={chapterHighlightedCommentId} />
             ) : (
               <section
                 className={`mx-auto mb-4 w-full max-w-3xl rounded-2xl border px-4 py-5 ${
@@ -799,15 +927,20 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
         onClose={() => setLightboxImageId(null)}
       />
 
-      {paragraphCommentLocation ? (
-        <div
-          className="fixed inset-0 z-[2100] flex items-center justify-center bg-slate-950/60 px-3 py-6"
-          onClick={() => setParagraphCommentLocation(null)}
-        >
-          <div
-            className={`max-h-full w-full max-w-3xl overflow-y-auto rounded-2xl p-5 shadow-2xl ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}
-            onClick={(event) => event.stopPropagation()}
-          >
+      <Dialog
+        open={paragraphCommentLocation !== null}
+        onClose={() => setParagraphCommentLocation(null)}
+        fullWidth
+        maxWidth="md"
+        slotProps={getAppDialogSlotProps({
+          isDarkMode,
+          zIndex: 2100,
+          paperClassName: 'mx-3 w-full max-w-3xl rounded-2xl shadow-2xl',
+          paperSx: { maxHeight: 'calc(100% - 48px)' },
+        })}
+      >
+        {paragraphCommentLocation ? (
+          <div className="max-h-[calc(100vh-3rem)] overflow-y-auto p-5">
             <div className="mb-1 flex items-center justify-between gap-3">
               <h2 className={`text-lg font-bold ${isDarkMode ? 'text-slate-100' : 'text-slate-950'}`}>
                 {activeParagraphCommentCount} Paragraph Comment{activeParagraphCommentCount === 1 ? '' : 's'}
@@ -827,12 +960,12 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
             <CommentSection
               locationId={paragraphCommentLocation}
               hideDefaultHeader
-              highlightedCommentId={activeCommentTarget?.commentId}
+              highlightedCommentId={paragraphHighlightedCommentId}
               onCommentCountChange={handleParagraphModalCommentCountChange}
             />
           </div>
-        </div>
-      ) : null}
+        ) : null}
+      </Dialog>
     </>
   );
 };
@@ -848,7 +981,7 @@ const scrollElementIntoScroller = (scroller: HTMLDivElement, element: HTMLElemen
   });
 };
 
-const scrollIframeParagraphIntoScroller = (scroller: HTMLDivElement, iframe: HTMLIFrameElement, paragraph: HTMLElement) => {
+const scrollIframeParagraphIntoScroller = (scroller: HTMLDivElement, iframe: HTMLIFrameElement, paragraph: Element) => {
   const scrollerRect = scroller.getBoundingClientRect();
   const iframeRect = iframe.getBoundingClientRect();
   const paragraphRect = paragraph.getBoundingClientRect();

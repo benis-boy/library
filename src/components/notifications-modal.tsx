@@ -1,5 +1,5 @@
 import { Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle } from '@mui/material';
-import { useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   CommentNotification,
@@ -7,12 +7,14 @@ import {
   fetchCommentReactions,
   fetchCommentsForLocations,
   fetchNotifications,
-  sendThreadMutation,
   markNotificationsChecked,
+  NotificationsSummaryResponse,
+  sendThreadMutation,
 } from '../comments/comments-api';
 import { Comment as CommentModel, CommentId, CommentReactions, MutationOwner, ThreadLocationId, toThreadLocationKey } from '../comments/dataModel';
 import { Comment } from '../comments/comments';
 import { CommentInput } from '../comments/comment-section';
+import { getAppDialogSlotProps } from './general/app-dialog';
 import { ConfigurationContext } from '../context/ConfigurationContext';
 import { getReaderRoute } from '../context/LibraryContext';
 import { PatreonContext } from '../context/PatreonContext';
@@ -24,6 +26,25 @@ type NotificationReactions = Record<CommentId, CommentReactions>;
 type NotificationCommentTarget = {
   locationId: ThreadLocationId;
   commentId: CommentId;
+};
+
+const mergeNotificationDetails = (previousDetails: NotificationDetails, nextDetails: NotificationDetails) => {
+  const mergedDetails = { ...previousDetails };
+
+  for (const [locationKey, nextLocationDetails] of Object.entries(nextDetails)) {
+    const previousLocationDetails = previousDetails[locationKey];
+    mergedDetails[locationKey] = previousLocationDetails
+      ? {
+          threadExists: nextLocationDetails.threadExists,
+          commentsById: {
+            ...previousLocationDetails.commentsById,
+            ...nextLocationDetails.commentsById,
+          },
+        }
+      : nextLocationDetails;
+  }
+
+  return mergedDetails;
 };
 
 const formatRelativeTime = (timestamp: number) => {
@@ -54,26 +75,41 @@ const CommentText = ({ comment, missingText, compact }: { comment: CommentModel 
     return <p className="text-sm italic opacity-70">{missingText}</p>;
   }
 
+  const attachmentUrl = comment.imageUrl?.trim() || null;
+
   return (
-    <button type="button" className="block w-full text-left" onClick={() => compact && setExpanded((isExpanded) => !isExpanded)}>
+    <button
+      type="button"
+      className="block w-full text-left"
+      aria-expanded={compact ? expanded : undefined}
+      onClick={() => compact && setExpanded((isExpanded) => !isExpanded)}
+    >
       <p className={`whitespace-pre-wrap text-sm leading-6 ${compact && !expanded ? 'line-clamp-1' : ''}`}>{comment.text}</p>
+      {attachmentUrl && (!compact || expanded) ? (
+        <img src={attachmentUrl} alt="Comment attachment" loading="lazy" className="mt-3 max-h-48 w-auto max-w-full rounded-lg border border-current/10 object-contain" />
+      ) : null}
     </button>
   );
 };
 
 export const NotificationsModal = ({
+  open,
   owner,
   initialUnreadCutoff,
   onClose,
+  onSummaryChange,
 }: {
+  open: boolean;
   owner: Exclude<MutationOwner, null>;
   initialUnreadCutoff: number;
   onClose: (options?: { preserveUnreadCutoff?: boolean }) => void;
+  onSummaryChange: (summary: NotificationsSummaryResponse) => void;
 }) => {
   const navigate = useNavigate();
   const { isDarkMode } = useContext(ConfigurationContext);
   const patreonContext = useContext(PatreonContext);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const ownerKey = useMemo(() => `${owner.userName}:${owner.patreonUserId}:${owner.signedUser}`, [owner]);
   const [items, setItems] = useState<CommentNotification[]>([]);
   const [details, setDetails] = useState<NotificationDetails>({});
   const [nextCursor, setNextCursor] = useState<number | null>(null);
@@ -85,6 +121,21 @@ export const NotificationsModal = ({
   const [replyingTo, setReplyingTo] = useState<NotificationCommentTarget | null>(null);
   const [editing, setEditing] = useState<NotificationCommentTarget | null>(null);
   const [pendingDelete, setPendingDelete] = useState<NotificationCommentTarget | null>(null);
+  const [unreadCutoff, setUnreadCutoff] = useState(initialUnreadCutoff);
+  const hasLoadedNotificationsRef = useRef(false);
+
+  useEffect(() => {
+    hasLoadedNotificationsRef.current = false;
+    setUnreadCutoff(initialUnreadCutoff);
+    setItems([]);
+    setDetails({});
+    setReactionsByCommentId({});
+    setNextCursor(null);
+    setError(null);
+    setReplyingTo(null);
+    setEditing(null);
+    setPendingDelete(null);
+  }, [initialUnreadCutoff, ownerKey]);
 
   const signedInUserName = patreonContext?.userInfo?.userName ?? null;
   const patreonUserId = patreonContext?.patreonUserId ?? null;
@@ -156,7 +207,7 @@ export const NotificationsModal = ({
     }
 
     const response = await fetchCommentsForLocations(notificationsWithCommentIds);
-    setDetails((previousDetails) => ({ ...previousDetails, ...response }));
+    setDetails((previousDetails) => mergeNotificationDetails(previousDetails, response));
 
     const commentIds = notificationsWithCommentIds.flatMap((notification) => notification.commentIds);
     if (commentIds.length === 0) {
@@ -167,47 +218,52 @@ export const NotificationsModal = ({
     setReactionsByCommentId((previousReactions) => ({ ...previousReactions, ...reactionsResponse.reactionsByCommentId }));
   };
 
-  useEffect(() => {
-    let cancelled = false;
+  const loadInitial = useCallback(async ({ force = false }: { force?: boolean } = {}) => {
+    if (!force && hasLoadedNotificationsRef.current) {
+      return;
+    }
 
-    const loadInitial = async () => {
-      setIsLoading(true);
-      setError(null);
+    setIsLoading(true);
+    setError(null);
+    setReplyingTo(null);
+    setEditing(null);
+    setPendingDelete(null);
 
-      try {
-        const response = await fetchNotifications(owner, { limit: PAGE_SIZE });
-        if (cancelled) {
-          return;
-        }
+    try {
+      const response = await fetchNotifications(owner, { limit: PAGE_SIZE });
+      setUnreadCutoff(response.lastCheckedAt);
+      setItems(response.items);
+      setDetails({});
+      setReactionsByCommentId({});
+      setNextCursor(response.nextCursor);
 
-        setItems(response.items);
-        setNextCursor(response.nextCursor);
-        if (response.unreadCount > 0) {
-          await markNotificationsChecked(owner);
-        }
-        if (!cancelled) {
-          await loadDetails(response.items);
-        }
-      } catch (caughtError) {
-        if (!cancelled) {
-          setError(caughtError instanceof Error ? caughtError.message : 'Could not load notifications.');
-        }
-      } finally {
-        if (!cancelled) {
-          setIsLoading(false);
-        }
+      if (response.unreadCount > 0) {
+        const summary = await markNotificationsChecked(owner);
+        onSummaryChange(summary);
+      } else {
+        onSummaryChange({ unreadCount: response.unreadCount, lastCheckedAt: response.lastCheckedAt });
       }
-    };
+
+      await loadDetails(response.items);
+      hasLoadedNotificationsRef.current = true;
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : 'Could not load notifications.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [onSummaryChange, owner]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
 
     void loadInitial();
-    return () => {
-      cancelled = true;
-    };
-  }, [owner]);
+  }, [loadInitial, open]);
 
   const refreshLocationDetails = async (locationId: ThreadLocationId, commentIds: CommentId[]) => {
     const response = await fetchCommentsForLocations([{ locationId, commentIds }]);
-    setDetails((previousDetails) => ({ ...previousDetails, ...response }));
+    setDetails((previousDetails) => mergeNotificationDetails(previousDetails, response));
     const reactionsResponse = await fetchCommentReactions(commentIds);
     setReactionsByCommentId((previousReactions) => ({ ...previousReactions, ...reactionsResponse.reactionsByCommentId }));
   };
@@ -411,20 +467,41 @@ export const NotificationsModal = ({
     navigate(`${getReaderRoute(notification.locationId.bookId, notification.locationId.chapterId)}?${params.toString()}`);
   };
 
+  if (!open) {
+    return null;
+  }
+
   return (
-    <div className="fixed inset-0 z-[2400] flex items-center justify-center bg-slate-950/70 px-3 py-6" onClick={() => onClose()}>
-      <div
-        className={`flex max-h-full w-full max-w-2xl flex-col rounded-2xl shadow-2xl ${isDarkMode ? 'bg-slate-900 text-slate-100' : 'bg-white text-slate-950'}`}
-        onClick={(event) => event.stopPropagation()}
-      >
+    <Dialog
+      open={open}
+      onClose={() => onClose()}
+      fullWidth
+      maxWidth="md"
+      slotProps={getAppDialogSlotProps({
+        isDarkMode,
+        zIndex: 2400,
+        paperClassName: 'mx-3 w-full max-w-2xl rounded-2xl shadow-2xl',
+        paperSx: { maxHeight: 'calc(100% - 48px)' },
+      })}
+    >
+      <div className="flex max-h-[calc(100vh-3rem)] flex-col">
         <div className={`flex items-center justify-between gap-3 border-b p-4 ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
           <h2 className="text-lg font-bold">Comment Notifications</h2>
-          <button type="button" className="rounded-full bg-[#BE3144] px-3 py-1 text-sm font-semibold text-white" onClick={() => onClose()}>
-            Close
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className={`rounded-full px-3 py-1 text-sm font-semibold ${isDarkMode ? 'bg-slate-800 text-slate-100 hover:bg-slate-700' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
+              onClick={() => void loadInitial({ force: true })}
+            >
+              Refresh
+            </button>
+            <button type="button" className="rounded-full bg-[#BE3144] px-3 py-1 text-sm font-semibold text-white" onClick={() => onClose()}>
+              Close
+            </button>
+          </div>
         </div>
 
-        <div ref={listRef} className="overflow-y-auto p-4" onScroll={handleScroll}>
+        <div ref={listRef} className="overflow-y-auto overscroll-contain p-4" onScroll={handleScroll}>
           {isLoading ? <p className="text-sm opacity-70">Loading notifications...</p> : null}
           {error ? <p className="rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
           {!isLoading && items.length === 0 ? <p className="text-sm opacity-70">No comment notifications yet.</p> : null}
@@ -433,7 +510,7 @@ export const NotificationsModal = ({
             {items.map((notification) => {
               const locationKey = toThreadLocationKey(notification.locationId);
               const locationDetails = details[locationKey];
-              const isNew = notification.createdAt > initialUnreadCutoff;
+              const isNew = notification.createdAt > unreadCutoff;
               const parent = notification.type === 'comment-reply' ? locationDetails?.commentsById[notification.parentCommentId] : undefined;
               const reply = notification.type === 'comment-reply' ? locationDetails?.commentsById[notification.replyCommentId] : undefined;
               const rootComment = notification.type === 'comment-thread-start' ? locationDetails?.commentsById[notification.rootCommentId] : undefined;
@@ -450,6 +527,7 @@ export const NotificationsModal = ({
               const isMissingReplyThread =
                 notification.type === 'comment-reply' && locationDetails?.threadExists === false && parent === null && reply === null;
               const isMissingStartThread = notification.type === 'comment-thread-start' && locationDetails?.threadExists === false && rootComment === null;
+              const canGoToThread = !isMissingReplyThread && !isMissingStartThread;
 
               return (
                 <article
@@ -541,9 +619,11 @@ export const NotificationsModal = ({
                       </div>
                     </>
                   )}
-                  <button type="button" className="mt-3 rounded-full bg-[#BE3144] px-4 py-2 text-sm font-semibold text-white" onClick={() => goToThread(notification)}>
-                    Go to thread
-                  </button>
+                  {canGoToThread ? (
+                    <button type="button" className="mt-3 rounded-full bg-[#BE3144] px-4 py-2 text-sm font-semibold text-white" onClick={() => goToThread(notification)}>
+                      Go to thread
+                    </button>
+                  ) : null}
                 </article>
               );
             })}
@@ -564,23 +644,7 @@ export const NotificationsModal = ({
       <Dialog
         open={pendingDelete !== null}
         onClose={() => setPendingDelete(null)}
-        slotProps={{
-          root: {
-            sx: { zIndex: 2500 },
-          },
-          paper: {
-            sx: isDarkMode
-              ? {
-                  backgroundColor: '#0f172a',
-                  border: '1px solid #334155',
-                  color: '#f1f5f9',
-                }
-              : undefined,
-          },
-          backdrop: {
-            sx: isDarkMode ? { backgroundColor: 'rgba(0, 0, 0, 0.7)' } : undefined,
-          },
-        }}
+        slotProps={getAppDialogSlotProps({ isDarkMode, zIndex: 2500 })}
       >
         <DialogTitle>Delete comment?</DialogTitle>
         <DialogContent>
@@ -606,6 +670,6 @@ export const NotificationsModal = ({
           </button>
         </DialogActions>
       </Dialog>
-    </div>
+    </Dialog>
   );
 };
