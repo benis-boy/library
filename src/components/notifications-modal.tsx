@@ -68,7 +68,7 @@ export const NotificationsModal = ({
 }: {
   owner: Exclude<MutationOwner, null>;
   initialUnreadCutoff: number;
-  onClose: () => void;
+  onClose: (options?: { preserveUnreadCutoff?: boolean }) => void;
 }) => {
   const navigate = useNavigate();
   const { isDarkMode } = useContext(ConfigurationContext);
@@ -399,6 +399,8 @@ export const NotificationsModal = ({
   };
 
   const goToThread = (notification: CommentNotification) => {
+    onClose({ preserveUnreadCutoff: true });
+
     const params = new URLSearchParams({
       commentId: notification.type === 'comment-reply' ? notification.replyCommentId : notification.rootCommentId,
     });
@@ -410,14 +412,14 @@ export const NotificationsModal = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[2400] flex items-center justify-center bg-slate-950/70 px-3 py-6" onClick={onClose}>
+    <div className="fixed inset-0 z-[2400] flex items-center justify-center bg-slate-950/70 px-3 py-6" onClick={() => onClose()}>
       <div
         className={`flex max-h-full w-full max-w-2xl flex-col rounded-2xl shadow-2xl ${isDarkMode ? 'bg-slate-900 text-slate-100' : 'bg-white text-slate-950'}`}
         onClick={(event) => event.stopPropagation()}
       >
         <div className={`flex items-center justify-between gap-3 border-b p-4 ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
           <h2 className="text-lg font-bold">Comment Notifications</h2>
-          <button type="button" className="rounded-full bg-[#BE3144] px-3 py-1 text-sm font-semibold text-white" onClick={onClose}>
+          <button type="button" className="rounded-full bg-[#BE3144] px-3 py-1 text-sm font-semibold text-white" onClick={() => onClose()}>
             Close
           </button>
         </div>

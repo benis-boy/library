@@ -118,6 +118,20 @@ const loadCommentsForLocation = (locationId: PageLocationId | ThreadLocationId, 
   return promise;
 };
 
+const compareThreads = (left: Thread, right: Thread) => {
+  const leftTimestamp = left.commentsById[left.rootCommentId]?.timestamp ?? Number.NEGATIVE_INFINITY;
+  const rightTimestamp = right.commentsById[right.rootCommentId]?.timestamp ?? Number.NEGATIVE_INFINITY;
+  if (leftTimestamp !== rightTimestamp) {
+    return rightTimestamp - leftTimestamp;
+  }
+
+  return left.rootCommentId.localeCompare(right.rootCommentId);
+};
+
+const sortThreads = (threads: Thread[]) => {
+  return [...threads].sort(compareThreads);
+};
+
 export const CommentInput = ({
   autoFocus = false,
   disabled = false,
@@ -413,6 +427,7 @@ export const CommentSection = ({
   const signedInUserNameRef = useRef<string | null>(signedInUserName);
   const pageLocationIdRef = useRef(pageLocationId);
   const flushPendingReactionsRef = useRef<FlushPendingReactions>(() => {});
+  const lastHandledHighlightKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     signedInUserNameRef.current = signedInUserName;
@@ -435,7 +450,7 @@ export const CommentSection = ({
           return;
         }
 
-        setThreads(loadedComments.threads);
+        setThreads(sortThreads(loadedComments.threads));
         setReactionsByCommentId(loadedComments.reactionsByCommentId);
         syncedReactionsByCommentIdRef.current = loadedComments.reactionsByCommentId;
         pendingReactionEmojisByCommentIdRef.current.clear();
@@ -493,7 +508,7 @@ export const CommentSection = ({
   }, [commentCount, onCommentCountChange]);
 
   const applyThreadsResponse = (nextThreads: Thread[]) => {
-    setThreads(nextThreads);
+    setThreads(sortThreads(nextThreads));
   };
 
   const findComment = (commentId: CommentId) => {
@@ -791,9 +806,22 @@ export const CommentSection = ({
   };
 
   useEffect(() => {
-    if (!highlightedCommentId || isLoading) {
+    if (!highlightedCommentId) {
+      lastHandledHighlightKeyRef.current = null;
+      setTemporaryHighlightedCommentId(null);
       return;
     }
+
+    if (isLoading) {
+      return;
+    }
+
+    const highlightKey = `${locationLoadKey}:${highlightedCommentId}`;
+    if (lastHandledHighlightKeyRef.current === highlightKey) {
+      return;
+    }
+
+    lastHandledHighlightKeyRef.current = highlightKey;
 
     setTemporaryHighlightedCommentId(highlightedCommentId);
     const frameId = window.requestAnimationFrame(() => {
@@ -809,7 +837,7 @@ export const CommentSection = ({
       window.cancelAnimationFrame(frameId);
       window.clearTimeout(timeoutId);
     };
-  }, [highlightedCommentId, isLoading, threads]);
+  }, [highlightedCommentId, isLoading, locationLoadKey]);
 
   return (
     <section className={`mx-auto w-full max-w-3xl ${className ?? ''}`}>

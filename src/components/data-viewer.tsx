@@ -39,6 +39,8 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
   const [isReaderFrameReady, setIsReaderFrameReady] = useState(false);
   const [shouldLoadChapterComments, setShouldLoadChapterComments] = useState(false);
   const lastRouteKeyRef = useRef<string | null>(null);
+  const handledCommentTargetKeyRef = useRef<string | null>(null);
+  const lastParagraphScrollTargetKeyRef = useRef<string | null>(null);
   const {
     libraryData: { content, selectedBook, selectedChapter, accessDeniedReason } = {
       content: '',
@@ -68,6 +70,7 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
     return commentId ? { commentId, paragraphLocation } : null;
   }, [location.search]);
   const [activeCommentTarget, setActiveCommentTarget] = useState<typeof parsedCommentTarget>(null);
+  const routeInfo = useMemo(() => parseReaderRoute(params.bookId, params.chapter), [params.bookId, params.chapter]);
 
   useEffect(() => {
     if (!parsedCommentTarget) {
@@ -230,7 +233,6 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
   }, [content, iframeRef]);
 
   useEffect(() => {
-    const routeInfo = parseReaderRoute(params.bookId, params.chapter);
     const scroller = scrollerRef.current;
     if (!routeInfo || !scroller || (!content && !accessDeniedReason) || parsedCommentTarget) {
       return;
@@ -369,7 +371,7 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
         delete scroller.dataset.readerRestoreUntil;
       }
     };
-  }, [accessDeniedReason, content, fontSize, isDarkMode, params.bookId, params.chapter, parsedCommentTarget, scrollerRef, selectedFont]);
+  }, [accessDeniedReason, content, fontSize, isDarkMode, parsedCommentTarget, routeInfo, scrollerRef, selectedFont]);
 
   useEffect(() => {
     if (iframeRef.current) {
@@ -418,7 +420,6 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
   }, [baseUrl]);
 
   useEffect(() => {
-    const routeInfo = parseReaderRoute(params.bookId, params.chapter);
     const pageLocationId = routeInfo
       ? { bookId: routeInfo.book, chapterId: routeInfo.chapter }
       : selectedChapter
@@ -467,7 +468,7 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
     return () => {
       cancelled = true;
     };
-  }, [accessDeniedReason, params.bookId, params.chapter, selectedBook, selectedChapter]);
+  }, [accessDeniedReason, routeInfo, selectedBook, selectedChapter]);
 
   useEffect(() => {
     iframeRef.current?.contentWindow?.postMessage(
@@ -501,7 +502,6 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
 
       if (event.data?.type === 'paragraph-comment-requested') {
         const paragraphIndex = event.data?.paragraphIndex;
-        const routeInfo = parseReaderRoute(params.bookId, params.chapter);
         const bookId = routeInfo?.book || selectedBook;
         const chapterId = routeInfo?.chapter || selectedChapter;
         if (typeof paragraphIndex !== 'number' || !bookId || !chapterId || !iframeRef.current?.contentDocument) {
@@ -525,7 +525,7 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
     return () => {
       window.removeEventListener('message', handleMessage);
     };
-  }, [galleryMap, paragraphCommentCounts, params.bookId, params.chapter, selectedBook, selectedChapter]);
+  }, [galleryMap, paragraphCommentCounts, routeInfo, selectedBook, selectedChapter]);
 
   const selectedLightboxImageSrc = useMemo(() => {
     if (!lightboxImageId) {
@@ -569,7 +569,6 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
     [paragraphCommentLocation]
   );
 
-  const routeInfo = parseReaderRoute(params.bookId, params.chapter);
   const commentLocation: PageLocationId | null = useMemo(
     () =>
       routeInfo
@@ -581,14 +580,32 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
   );
   const chapterCommentLocationKey = commentLocation ? `${commentLocation.bookId}:${commentLocation.chapterId}` : null;
 
+  const activeCommentTargetKey = useMemo(() => {
+    if (!activeCommentTarget || !commentLocation) {
+      return null;
+    }
+
+    return `${commentLocation.bookId}:${commentLocation.chapterId}:${activeCommentTarget.commentId}:${
+      activeCommentTarget.paragraphLocation ? JSON.stringify(activeCommentTarget.paragraphLocation) : 'chapter'
+    }`;
+  }, [activeCommentTarget, commentLocation]);
+
   useEffect(() => {
     setShouldLoadChapterComments(false);
+    handledCommentTargetKeyRef.current = null;
+    lastParagraphScrollTargetKeyRef.current = null;
   }, [chapterCommentLocationKey]);
 
   useEffect(() => {
-    if (!activeCommentTarget || !commentLocation) {
+    if (!activeCommentTarget || !commentLocation || !isReaderFrameReady || !activeCommentTargetKey) {
       return;
     }
+
+    if (handledCommentTargetKeyRef.current === activeCommentTargetKey) {
+      return;
+    }
+
+    handledCommentTargetKeyRef.current = activeCommentTargetKey;
 
     if (activeCommentTarget.paragraphLocation) {
       const targetLocation = {
@@ -601,7 +618,47 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
     }
 
     setShouldLoadChapterComments(true);
-  }, [activeCommentTarget, commentLocation, paragraphCommentCounts]);
+    const sentinel = chapterCommentsSentinelRef.current;
+    const scroller = scrollerRef.current;
+    if (sentinel && scroller) {
+      window.requestAnimationFrame(() => {
+        scrollElementIntoScroller(scroller, sentinel);
+      });
+    }
+  }, [activeCommentTarget, activeCommentTargetKey, commentLocation, isReaderFrameReady, paragraphCommentCounts, scrollerRef]);
+
+  useEffect(() => {
+    if (!activeCommentTarget?.paragraphLocation || !activeCommentTargetKey || !commentLocation || !isReaderFrameReady) {
+      return;
+    }
+
+    if (lastParagraphScrollTargetKeyRef.current === activeCommentTargetKey) {
+      return;
+    }
+
+    const iframe = iframeRef.current;
+    const scroller = scrollerRef.current;
+    const iframeDocument = iframe?.contentDocument;
+    if (!iframe || !scroller || !iframeDocument) {
+      return;
+    }
+
+    const paragraph = iframeDocument.querySelector(
+      `p[data-paragraph-index="${activeCommentTarget.paragraphLocation.paragraphIndex}"]`
+    );
+    if (!(paragraph instanceof HTMLElement)) {
+      return;
+    }
+
+    lastParagraphScrollTargetKeyRef.current = activeCommentTargetKey;
+    iframeDocument.querySelectorAll('p.paragraph-comment-target').forEach((element) => {
+      if (element !== paragraph) {
+        element.classList.remove('paragraph-comment-target');
+      }
+    });
+    paragraph.classList.add('paragraph-comment-target');
+    scrollIframeParagraphIntoScroller(scroller, iframe, paragraph);
+  }, [activeCommentTarget, activeCommentTargetKey, commentLocation, isReaderFrameReady, scrollerRef]);
 
   useEffect(() => {
     if (shouldLoadChapterComments || !chapterCommentLocationKey || !isReaderFrameReady) {
@@ -779,6 +836,31 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
     </>
   );
 };
+
+const scrollElementIntoScroller = (scroller: HTMLDivElement, element: HTMLElement) => {
+  const scrollerRect = scroller.getBoundingClientRect();
+  const elementRect = element.getBoundingClientRect();
+  const nextTop = scroller.scrollTop + (elementRect.top - scrollerRect.top) - Math.max(24, scroller.clientHeight * 0.18);
+
+  scroller.scrollTo({
+    top: Math.max(0, nextTop),
+    behavior: 'auto',
+  });
+};
+
+const scrollIframeParagraphIntoScroller = (scroller: HTMLDivElement, iframe: HTMLIFrameElement, paragraph: HTMLElement) => {
+  const scrollerRect = scroller.getBoundingClientRect();
+  const iframeRect = iframe.getBoundingClientRect();
+  const paragraphRect = paragraph.getBoundingClientRect();
+  const paragraphTopInScroller = iframeRect.top - scrollerRect.top + paragraphRect.top;
+  const nextTop = scroller.scrollTop + paragraphTopInScroller - Math.max(24, scroller.clientHeight * 0.22);
+
+  scroller.scrollTo({
+    top: Math.max(0, nextTop),
+    behavior: 'auto',
+  });
+};
+
 const injectStyles = (
   iframeRef: React.RefObject<HTMLIFrameElement | null>,
   { isDarkMode, selectedFont, fontSize }: { isDarkMode: boolean; selectedFont: string; fontSize: number }
