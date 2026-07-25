@@ -105,6 +105,12 @@ export function InnerApp() {
   const handleScroll = useCallback(
     (e: React.UIEvent<HTMLDivElement, UIEvent>) => {
       const y = e.currentTarget.scrollTop;
+      const restoreUntil = Number(e.currentTarget.dataset.readerRestoreUntil || 0);
+      if (restoreUntil > Date.now()) {
+        lastScrollY.current = y;
+        return;
+      }
+
       scheduleReaderScrollSave(e.currentTarget);
       if (y > lastScrollY.current) {
         if (isReaderRoute) {

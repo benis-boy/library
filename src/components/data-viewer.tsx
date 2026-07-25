@@ -178,9 +178,12 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
       return;
     }
 
+    const storedScroll = getReaderScroll(routeInfo.book);
+
     let cancelled = false;
     let frameId: number | undefined;
     let timeoutId: number | undefined;
+    let restoreFlagTimeoutId: number | undefined;
     let lastAppliedScrollTop: number | null = null;
 
     const restore = () => {
@@ -200,15 +203,25 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
 
       const maxScrollTop = Math.max(0, currentScroller.scrollHeight - currentScroller.clientHeight);
 
-      const stored = getReaderScroll(routeInfo.book);
       let top = 0;
-      if (stored?.chapter === routeInfo.chapter) {
-        const savedMaxScrollTop = Math.max(1, stored.scrollHeight - stored.clientHeight);
-        const heightDelta = Math.abs(currentScroller.scrollHeight - stored.scrollHeight);
-        top = heightDelta > 8 ? (stored.scrollTop / savedMaxScrollTop) * maxScrollTop : stored.scrollTop;
+      if (storedScroll?.chapter === routeInfo.chapter) {
+        const savedMaxScrollTop = Math.max(1, storedScroll.scrollHeight - storedScroll.clientHeight);
+        const heightDelta = Math.abs(currentScroller.scrollHeight - storedScroll.scrollHeight);
+        top = heightDelta > 8 ? (storedScroll.scrollTop / savedMaxScrollTop) * maxScrollTop : storedScroll.scrollTop;
       }
 
       const clampedTop = Math.min(Math.max(0, top), maxScrollTop);
+
+      currentScroller.dataset.readerRestoreUntil = String(Date.now() + 200);
+      if (restoreFlagTimeoutId !== undefined) {
+        window.clearTimeout(restoreFlagTimeoutId);
+      }
+      restoreFlagTimeoutId = window.setTimeout(() => {
+        if (scrollerRef.current?.dataset.readerRestoreUntil === currentScroller.dataset.readerRestoreUntil) {
+          delete currentScroller.dataset.readerRestoreUntil;
+        }
+        restoreFlagTimeoutId = undefined;
+      }, 220);
 
       currentScroller.scrollTo({
         top: clampedTop,
@@ -285,6 +298,12 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
       }
       if (timeoutId !== undefined) {
         window.clearTimeout(timeoutId);
+      }
+      if (restoreFlagTimeoutId !== undefined) {
+        window.clearTimeout(restoreFlagTimeoutId);
+      }
+      if (scrollerRef.current) {
+        delete scrollerRef.current.dataset.readerRestoreUntil;
       }
     };
   }, [accessDeniedReason, content, fontSize, isDarkMode, params.bookId, params.chapter, scrollerRef, selectedFont]);
