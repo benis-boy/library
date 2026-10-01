@@ -38,3 +38,5 @@ simple-tts
 
 skills-lock.json
 .agents
+# Playwright CLI output (may contain credentials)
+.playwright-cli/

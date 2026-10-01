@@ -1,6 +1,8 @@
 # Adding a New Book
 
-This guide documents the current process for adding a new book to the library with the modular content pipeline.
+For the release decision and separate Pages/Netlify steps, see [Publishing: choose the safe path](../PUBLISHING.md).
+
+This guide documents the current process for adding a new book to the library. Read [Development and release](development-and-release.md) before running verification or publishing commands; the content pipeline has side effects beyond book generation.
 
 ## Required Files and Changes
 
@@ -9,7 +11,7 @@ This guide documents the current process for adding a new book to the library wi
 Create these files in the repository root:
 
 - `book-data/{BookId}_export.md` - source markdown content
-- `deployment/{BookId}_secret.txt` - encryption password file (required for `encryptExport.py` map)
+- The local encryption password file named by `book_id_to_secret_path` in `deployment/encryptExport.py` (needed when generating encrypted content; secret files are gitignored and must never be committed)
 - `public/assets/{BookId}_cover.jpg` - cover image (or matching format used in book data)
 
 ### 2. Book Metadata (`src/basicBookData.json`)
@@ -45,7 +47,9 @@ export const SourceTypes: SourceType[] = ['PSSJ', 'WtDR', 'SoWB'];
 
 ### 5. Patreon Frontend Defaults (`src/context/PatreonProvider.tsx`)
 
-Add the new key to `encryptionPasswordV2` initial state.
+Add the new ID to `DEFAULT_ENCRYPTION_PASSWORD_V2` so the type and state cover it.
+
+Also update the manifest imports and the `chapterManifests` and `storyChaptersByBook` maps in `src/App.stories.tsx`. They explicitly cover every `SourceType` and are included in the root TypeScript build. Add meaningful reader interactions for the new book; do not add visual-only stories.
 
 ### 6. Encryption Secret Mapping (`deployment/encryptExport.py`)
 
@@ -67,13 +71,11 @@ Rule parsing is shared by modular scripts via `deployment/encryption_rules.py`.
 
 ### 8. Netlify Function (`netlify/functions/patreon-oauth/patreon-oauth.js`)
 
-If the new book can be supporter-only, wire env var + returned key:
+If the new book can contain secured chapters, add its environment variable to `KEY_ENVIRONMENT_NAMES` and return the key in `encryption_passwordv2`. Set that environment variable in Netlify project settings. Current configured names are `NETLIFY_SECRET_PASSWORD` (legacy v1), `WTDR_SECRET_PASSWORD`, and `SOWB_SECRET_PASSWORD`; the server requires every configured key for an eligible reader. Do not put secret values in source or documentation.
 
-- add `process.env.<BOOK>_SECRET_PASSWORD`
-- add key to `encryption_passwordv2`
-- assign real value for supporters
+In `getKeys`, update both the initial denial-value map and the returned `encryption_passwordv2` fields. Adding only `KEY_ENVIRONMENT_NAMES` does not add a returned key: the response fields are explicit. Verify both eligible-key delivery and ineligible `NOT_ALLOWED` for the new ID.
 
-Also set the env var in Netlify project settings.
+All configured keys use the same eligibility rule: an active membership of campaign `12346885` OR lifetime campaign payments strictly greater than 500 cents (USD campaign assumed). `supportsMe` means eligible to read secured content, not necessarily currently subscribed. Adding a book does not introduce a separate eligibility policy. See [Patreon authentication](patreon-authentication.md).
 
 ## Pipeline (modular)
 
@@ -104,7 +106,7 @@ Each chapter entry must include:
 
 ## Running the Pipeline
 
-Regenerate content for selected books only:
+Regenerate selected books (gallery processing and general cache updates also run):
 
 ```powershell
 .\pipeline.ps1 --book SoWB
@@ -122,7 +124,9 @@ Publish (commit/push/deploy) after regeneration:
 .\pipeline.ps1 --book SoWB --commit
 ```
 
-No `--book` arguments means no content regeneration (intentional for no-book-change runs).
+No `--book` arguments means no book chapter/navigation regeneration, but this is not a no-op or safe pretest: the pipeline still regenerates gallery assets/manifest, updates general cache versions and `src/cacheVersions.json`, and may run strict gallery review. A run without `--commit` still writes/regenerates those files.
+
+Do not append `--commit` as a routine validation step. It runs `git add .`, can commit existing staged or unrelated worktree changes, pushes the current source branch, may force-update the orphan `origin/netlify` branch, and runs `npm run deploy` for GitHub Pages. Use that mode only for an intentional reviewed release. For safe local frontend checks, see [Development and release](development-and-release.md).
 
 ## Validation Checklist
 
@@ -133,3 +137,5 @@ After adding a book, verify:
 - `public/book-data/{BookId}/` has generated chapter HTML files
 - app can open `#/reader/{BookId}` and load first/next chapter correctly
 - secured chapter access rules behave as expected (login/supporter gating)
+
+Use focused Storybook interactions for safe frontend gating checks. Do not treat mock provider/API flows as production-service proof, and do not use the live comments UI for test mutations: the frontend points at a hosted API that persists to Upstash. The deployment guide describes the current local integration limitations.

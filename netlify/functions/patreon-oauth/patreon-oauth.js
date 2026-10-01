@@ -1,184 +1,225 @@
 const crypto = require('crypto');
 
-const getCommentsAuthSecret = () => {
-  const secret = process.env.COMMENTS_AUTH_SECRET;
-  if (!secret) {
-    throw new Error('Missing COMMENTS_AUTH_SECRET.');
-  }
+const CAMPAIGN_ID = '12346885';
+const ACTIVE_PATRON_STATUS = 'active_patron';
+// Eligibility is strictly greater than 500 cents (> $5); this assumes the campaign currency is USD.
+const LIFETIME_SUPPORT_THRESHOLD_CENTS = 500;
+const KEY_ENVIRONMENT_NAMES = {
+  v1: 'NETLIFY_SECRET_PASSWORD',
+  WtDR: 'WTDR_SECRET_PASSWORD',
+  SoWB: 'SOWB_SECRET_PASSWORD',
+};
+const CLIENT_ID = 'DCmpYjAt5oF-1poN2N_hW22VXTuz8BNIOPk1yeoctffuvobAJCu8I7N7fKc1ngMp';
+const REDIRECT_URI = 'https://benis-boy.github.io/library/';
+const TOKEN_URL = 'https://www.patreon.com/api/oauth2/token';
+const IDENTITY_URL = 'https://www.patreon.com/api/oauth2/v2/identity';
+const APPLICATION_USER_AGENT = 'BenisBoyLibrary/1.0 (+https://benis-boy.github.io/library/)';
 
-  return secret;
+// All keys share this policy: an active supporter OR lifetime payments above the threshold.
+const isEligibleForKeys = (membership) => {
+  const attributes = membership?.attributes;
+  if (attributes?.patron_status === ACTIVE_PATRON_STATUS) return true;
+
+  const lifetimeSupport = attributes?.campaign_lifetime_support_cents;
+  return (
+    typeof lifetimeSupport === 'number' &&
+    Number.isFinite(lifetimeSupport) &&
+    lifetimeSupport >= 0 &&
+    lifetimeSupport > LIFETIME_SUPPORT_THRESHOLD_CENTS
+  );
 };
 
-const signPatreonUserId = (patreonUserId) =>
-  crypto.createHmac('sha256', getCommentsAuthSecret()).update(patreonUserId).digest('base64url');
+const response = (statusCode, headers, body) => ({ statusCode, headers, body });
 
-exports.handler = async (event, context) => {
-  // Allow CORS requests from any origin
+const parseRequestBody = (body) => {
+  if (typeof body !== 'string') {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(body);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
+const getCredentials = (body) => {
+  if (!body) return null;
+  if (body.code !== undefined && typeof body.code !== 'string') return null;
+  if (body.refresh_token !== undefined && typeof body.refresh_token !== 'string') return null;
+
+  // Keep authorization code priority when both credentials are supplied.
+  const code = body.code || '';
+  const refreshToken = body.refresh_token || '';
+  if (!code && !refreshToken) return null;
+  return code ? { type: 'authorization_code', value: code } : { type: 'refresh_token', value: refreshToken };
+};
+
+const exchangeToken = async (credential) => {
+  const params = new URLSearchParams({
+    grant_type: credential.type,
+    client_id: CLIENT_ID,
+  });
+  if (credential.type === 'authorization_code') {
+    params.set('code', credential.value);
+    params.set('redirect_uri', REDIRECT_URI);
+  } else {
+    params.set('refresh_token', credential.value);
+    params.set('redirect_uri', REDIRECT_URI);
+  }
+
+  return fetch(TOKEN_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'User-Agent': APPLICATION_USER_AGENT,
+    },
+    body: params.toString(),
+  });
+};
+
+const fetchIdentity = async (accessToken) => {
+  const url = new URL(IDENTITY_URL);
+  url.search = new URLSearchParams({
+    include: 'memberships.currently_entitled_tiers,memberships.campaign',
+    'fields[user]': 'full_name,vanity',
+    'fields[member]': 'campaign_lifetime_support_cents,currently_entitled_amount_cents,patron_status,pledge_cadence',
+  }).toString();
+
+  return fetch(url.toString(), {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+      'User-Agent': APPLICATION_USER_AGENT,
+    },
+  });
+};
+
+const getOwnMembership = (userInfo) => {
+  if (!Array.isArray(userInfo?.included)) return null;
+  return userInfo.included.find(
+    (membership) =>
+      membership?.type === 'member' &&
+      membership?.relationships?.campaign?.data?.id === CAMPAIGN_ID
+  ) ?? null;
+};
+
+const getKeys = (isEligible, setFailureStage) => {
+  const keys = { v1: 'NOT_ALLOWED', WtDR: 'NOT_ALLOWED', SoWB: 'NOT_ALLOWED' };
+  if (isEligible) {
+    for (const [key, environmentName] of Object.entries(KEY_ENVIRONMENT_NAMES)) {
+      const secret = process.env[environmentName];
+      if (!secret) {
+        setFailureStage(`key-${key}`);
+        throw new Error('Required encryption key configuration is missing.');
+      }
+      keys[key] = secret;
+    }
+  }
+
+  return {
+    encryption_passwordv1: keys.v1,
+    encryption_passwordv2: { WtDR: keys.WtDR, SoWB: keys.SoWB },
+  };
+};
+
+const signPatreonUserId = (patreonUserId, setFailureStage) => {
+  const secret = process.env.COMMENTS_AUTH_SECRET;
+  if (!secret) {
+    setFailureStage('comments-config');
+    throw new Error('Required comments authentication configuration is missing.');
+  }
+  return crypto.createHmac('sha256', secret).update(patreonUserId).digest('base64url');
+};
+
+const makeSuccessfulResponse = (token, userInfo, membership, patreonUserId, setFailureStage) => {
+  const userAttributes = userInfo.data.attributes ?? {};
+  const userName = userAttributes.vanity ?? userAttributes.full_name ?? 'CouldNotFindName';
+  const supportsMe = isEligibleForKeys(membership);
+  const keys = getKeys(supportsMe, setFailureStage);
+  const signedUser = signPatreonUserId(patreonUserId, setFailureStage);
+
+  return {
+    ...token,
+    patreonUserId,
+    userInfo: {
+      userName,
+      supportsMe,
+      currently_entitled_tiers: membership?.relationships?.currently_entitled_tiers,
+    },
+    signedUser,
+    membershipData: membership,
+    // The frontend still expects the legacy v1 key under encryption_password.
+    encryption_password: keys.encryption_passwordv1,
+    encryption_passwordv2: keys.encryption_passwordv2,
+  };
+};
+
+exports.handler = async (event) => {
   const headers = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type',
     'Access-Control-Allow-Methods': 'POST',
   };
 
-  if (event.httpMethod === 'OPTIONS') {
-    // Handle CORS preflight requests
-    return {
-      statusCode: 200,
-      headers,
-      body: 'CORS Preflight',
-    };
-  }
+  if (event.httpMethod === 'OPTIONS') return response(200, headers, 'CORS Preflight');
+  if (event.httpMethod !== 'POST') return response(405, headers, 'Method Not Allowed');
 
-  if (event.httpMethod !== 'POST') {
-    return {
-      statusCode: 405,
-      headers,
-      body: 'Method Not Allowed',
-    };
-  }
+  const credentials = getCredentials(parseRequestBody(event.body));
+  if (!credentials) return response(400, headers, 'Valid JSON body with code or refresh_token is required');
 
-  // Extract the authorization code from the request body
-  const { code, refresh_token } = JSON.parse(event.body);
-
-  if (!code && !refresh_token) {
-    return {
-      statusCode: 400,
-      headers,
-      body: 'Authorization code or refresh_token is required',
-    };
-  }
-
-  const client_id = 'DCmpYjAt5oF-1poN2N_hW22VXTuz8BNIOPk1yeoctffuvobAJCu8I7N7fKc1ngMp';
-  const redirect_uri = 'https://benis-boy.github.io/library/'; // Make sure this matches the one registered in Patreon
-
-  const token_url = 'https://www.patreon.com/api/oauth2/token?';
-
-  const secret = process.env.NETLIFY_SECRET_PASSWORD;
-  const wtdrSecret = process.env.WTDR_SECRET_PASSWORD;
-  const sowbSecret = process.env.SOWB_SECRET_PASSWORD;
-  const encryption_password = secret;
-  const encryption_passwordv2 = {
-    WtDR: 'NOT_ALLOWED',
-    SoWB: 'NOT_ALLOWED'
+  let failureStage = 'token-fetch';
+  let hasLoggedFailure = false;
+  const logFailure = (code) => {
+    if (hasLoggedFailure) return;
+    hasLoggedFailure = true;
+    console.error(`po:${code}`);
   };
+  const statusCodeForLog = (stage, status) =>
+    Number.isInteger(status) && status >= 100 && status <= 599 ? `${stage}-http:${status}` : `${stage}-http`;
 
   try {
-    // Send a POST request to exchange the authorization code for an access token
-    let response = null;
-    if (code) {
-      response = await fetch(
-        token_url +
-          new URLSearchParams({
-            code,
-            grant_type: 'authorization_code',
-            client_id,
-            redirect_uri,
-          }).toString(),
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
-        }
-      );
-    } else if (refresh_token) {
-      response = await fetch(
-        token_url +
-          new URLSearchParams({
-            grant_type: 'refresh_token',
-            client_id,
-            refresh_token,
-            redirect_uri, // This may not be needed depending on the provider
-          }).toString(),
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
-        }
-      );
+    const tokenResponse = await exchangeToken(credentials);
+    if (!tokenResponse.ok) {
+      // Preserve Patreon token-error status/body passthrough for compatibility.
+      failureStage = 'token-json';
+      const tokenError = await tokenResponse.json();
+      const tokenErrorBody = JSON.stringify(tokenError);
+      logFailure(statusCodeForLog('token', tokenResponse.status));
+      return response(tokenResponse.status, headers, tokenErrorBody);
     }
 
-    const token = await response.json();
-
-    if (response.ok) {
-      const userFetchUrl =
-        'https://www.patreon.com/api/oauth2/v2/identity?' +
-        new URLSearchParams({
-          include: 'memberships.currently_entitled_tiers,memberships.campaign',
-          'fields[user]': 'full_name,vanity',
-          'fields[member]': 'currently_entitled_amount_cents,lifetime_support_cents,patron_status,pledge_cadence',
-        }).toString();
-
-      const userDataResponse = await fetch(userFetchUrl, {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${token.access_token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-      if (!userDataResponse.ok) {
-        throw new Error('Failed to fetch user info from Patreon: ' + (await userDataResponse.text()));
-      }
-      const userInfo = await userDataResponse.json();
-
-      const patreonUserId = userInfo?.data?.id;
-      if (typeof patreonUserId !== 'string' || patreonUserId.length === 0) {
-        throw new Error('Failed to find stable Patreon user id.');
-      }
-
-      const userName = userInfo.data.attributes.vanity ?? userInfo.data.attributes.full_name ?? 'CouldNotFindName';
-      const generalMemberData = userInfo.included.filter((something) => something.type === 'member');
-      const myMemberData = generalMemberData.find(
-        (memberInfo) => memberInfo?.relationships?.campaign?.data?.id === '12346885'
-      );
-
-      const everPaidAnything = myMemberData?.attributes?.lifetime_support_cents > 0;
-      const isAugust = new Date().getFullYear() === 2025 && new Date().getMonth() === 7;
-
-      const filteredMembershipData = {
-        userName,
-        supportsMe:
-          myMemberData?.attributes?.patron_status === 'active_patron' ||
-          userName === 'BenisBoy16' ||
-          (everPaidAnything && isAugust),
-        currently_entitled_tiers: myMemberData?.relationships?.currently_entitled_tiers,
-      };
-      const signedUser = signPatreonUserId(patreonUserId);
-
-      if (filteredMembershipData.supportsMe) {
-        encryption_passwordv2.WtDR = wtdrSecret;
-        encryption_passwordv2.SoWB = sowbSecret;
-      }
-
-      // Return the access token to the frontend
-      return {
-        statusCode: 200,
-        headers,
-        body: JSON.stringify({
-          ...token,
-          patreonUserId,
-          userInfo: filteredMembershipData,
-          signedUser,
-          membershipData: myMemberData,
-          encryption_password,
-          encryption_passwordv2,
-        }),
-      };
-    } else {
-      // Handle errors from Patreon API
-      return {
-        statusCode: response.status,
-        headers,
-        body: JSON.stringify(token),
-      };
+    failureStage = 'token-json';
+    const token = await tokenResponse.json();
+    failureStage = 'token-data';
+    if (typeof token?.access_token !== 'string' || token.access_token.length === 0) {
+      throw new Error('Patreon token response was invalid.');
     }
-  } catch (error) {
-    // Handle network or other errors
-    return {
-      statusCode: 500,
-      headers,
-      body: 'Error fetching token from Patreon: ' + error.message,
-    };
+
+    failureStage = 'identity-fetch';
+    const identityResponse = await fetchIdentity(token.access_token);
+    if (!identityResponse.ok) {
+      failureStage = statusCodeForLog('identity', identityResponse.status);
+      throw new Error('Patreon identity request failed.');
+    }
+    failureStage = 'identity-json';
+    const userInfo = await identityResponse.json();
+    failureStage = 'identity-data';
+    const patreonUserId = userInfo?.data?.id;
+    if (typeof patreonUserId !== 'string' || patreonUserId.length === 0) {
+      throw new Error('Patreon identity response was invalid.');
+    }
+
+    const membership = getOwnMembership(userInfo);
+    failureStage = 'response';
+    const successfulResponse = makeSuccessfulResponse(token, userInfo, membership, patreonUserId, (stage) => {
+      failureStage = stage;
+    });
+    return response(200, headers, JSON.stringify(successfulResponse));
+  } catch {
+    logFailure(failureStage);
+    return response(500, headers, 'Patreon authentication failed. Check server configuration and try again.');
   }
 };
