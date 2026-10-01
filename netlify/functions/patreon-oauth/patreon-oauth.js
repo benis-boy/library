@@ -110,7 +110,7 @@ const getOwnMembership = (userInfo) => {
   ) ?? null;
 };
 
-const logSuccessfulAuthentication = (membership) => {
+const logSuccessfulAuthentication = (membership, userName) => {
   const attributes = membership?.attributes;
   const patronStatus = LOGGABLE_PATRON_STATUSES.has(attributes?.patron_status)
     ? attributes.patron_status
@@ -121,8 +121,13 @@ const logSuccessfulAuthentication = (membership) => {
       ? lifetimeSupport
       : null;
 
+  const safeUserName = typeof userName === 'string' ? Array.from(userName).slice(0, 200).join('') : null;
+
   try {
-    console.log(`po:success ${JSON.stringify({ patron_status: patronStatus, lifetimeSupport: safeLifetimeSupport })}`);
+    const details = JSON.stringify({ patron_status: patronStatus, lifetimeSupport: safeLifetimeSupport, userName: safeUserName })
+      .replace(/\u2028/g, '\\u2028')
+      .replace(/\u2029/g, '\\u2029');
+    console.log(`po:success ${details}`);
   } catch {
     // Diagnostics must never turn an otherwise successful authentication into a failure.
   }
@@ -240,7 +245,7 @@ exports.handler = async (event) => {
       failureStage = stage;
     });
     const serializedResponse = JSON.stringify(successfulResponse);
-    logSuccessfulAuthentication(membership);
+    logSuccessfulAuthentication(membership, successfulResponse.userInfo.userName);
     return response(200, headers, serializedResponse);
   } catch {
     logFailure(failureStage);

@@ -14,6 +14,8 @@ const secrets = {
   COMMENTS_AUTH_SECRET: 'comments-secret',
 };
 
+const parseSuccessLog = (message) => JSON.parse(message.slice('po:success '.length));
+
 const member = (attributes = {}, id = campaignId) => ({
   type: 'member',
   attributes,
@@ -35,7 +37,7 @@ const response = (body, status = 200) => ({
   text: async () => JSON.stringify(body),
 });
 
-const createHarness = ({ identityData = identity([member({ patron_status: 'active_patron' })]), token = { access_token: 'access-secret', refresh_token: 'refresh-output' }, env = secrets, fetchImpl } = {}) => {
+const createHarness = ({ identityData = identity([member({ patron_status: 'active_patron' })]), token = { access_token: 'access-secret', refresh_token: 'refresh-output' }, env = secrets, fetchImpl, consoleLog } = {}) => {
   const calls = [];
   const logs = [];
   const successLogs = [];
@@ -59,7 +61,7 @@ const createHarness = ({ identityData = identity([member({ patron_status: 'activ
     JSON,
     console: {
       error: (...values) => logs.push(values),
-      log: (...values) => successLogs.push(values),
+      log: consoleLog ?? ((...values) => successLogs.push(values)),
     },
   };
   vm.runInNewContext(source, context, { filename: 'patreon-oauth.js' });
@@ -75,6 +77,7 @@ test('Patreon OAuth grants all configured keys to active and qualifying former p
   for (const membership of [
     member({ patron_status: 'active_patron', campaign_lifetime_support_cents: 0 }),
     member({ patron_status: 'former_patron', campaign_lifetime_support_cents: 501 }),
+    member({ patron_status: 'former_patron', campaign_lifetime_support_cents: 501, currently_entitled_amount_cents: 0 }),
     member({ patron_status: 'declined_patron', campaign_lifetime_support_cents: 501 }),
   ]) {
     const { handler } = createHarness({ identityData: identity([membership]) });
@@ -125,6 +128,7 @@ test('Patreon OAuth does not grant owner access from a similar ID, username, or 
 test('Patreon OAuth denies nonqualifying or non-own campaign membership and ignores legacy bypasses', async () => {
   const excludedMemberships = [
     member({ patron_status: 'former_patron', campaign_lifetime_support_cents: 500 }),
+    member({ patron_status: 'former_patron', campaign_lifetime_support_cents: 0, currently_entitled_amount_cents: 50000 }),
     member({ patron_status: 'former_patron', campaign_lifetime_support_cents: 499 }),
     member({ patron_status: 'former_patron' }),
     member({ patron_status: 'former_patron', campaign_lifetime_support_cents: null }),
@@ -144,6 +148,26 @@ test('Patreon OAuth denies nonqualifying or non-own campaign membership and igno
     assert.equal(body.encryption_password, 'NOT_ALLOWED');
     assert.deepEqual(body.encryption_passwordv2, { WtDR: 'NOT_ALLOWED', SoWB: 'NOT_ALLOWED' });
   }
+});
+
+test('Patreon OAuth lifetime eligibility requires over 500 campaign cents and ignores current entitlement', async () => {
+  for (const [lifetime, currentlyEntitled, expected] of [
+    [500, 0, false],
+    [501, 0, true],
+    [0, 50000, false],
+  ]) {
+    const { handler } = createHarness({
+      identityData: identity([member({ patron_status: 'former_patron', campaign_lifetime_support_cents: lifetime, currently_entitled_amount_cents: currentlyEntitled })]),
+    });
+    const body = parseBody(await invoke(handler));
+    assert.equal(body.userInfo.supportsMe, expected, `lifetime=${lifetime}, current=${currentlyEntitled}`);
+    assert.equal(body.encryption_password, expected ? secrets.NETLIFY_SECRET_PASSWORD : 'NOT_ALLOWED');
+  }
+
+  const otherCampaign = createHarness({
+    identityData: identity([member({ patron_status: 'former_patron', campaign_lifetime_support_cents: 10000 }, 'other-campaign')]),
+  });
+  assert.equal(parseBody(await invoke(otherCampaign.handler)).userInfo.supportsMe, false);
 });
 
 test('Patreon OAuth sends credentials in the form body and signs stable identity', async () => {
@@ -311,10 +335,52 @@ test('Patreon OAuth success diagnostics include only sanitized campaign membersh
     const result = await invoke(harness.handler);
     assert.equal(result.statusCode, 200);
     assert.equal(parseBody(result).userInfo.supportsMe, supportsMe);
-    assert.deepEqual(harness.successLogs, [[`po:success ${JSON.stringify(expected)}`]]);
+    assert.deepEqual(harness.successLogs, [[`po:success ${JSON.stringify({ ...expected, userName: identityData.data?.attributes?.vanity ?? identityData.data?.attributes?.full_name ?? 'CouldNotFindName' })}`]]);
     assert.deepEqual(harness.logs, []);
-    assert.doesNotMatch(JSON.stringify(harness.successLogs), /patreon-user-42|101723637|reader-name|access-secret|refresh-output|v1-secret|wtdr-secret|sowb-secret/);
+    assert.doesNotMatch(JSON.stringify(harness.successLogs), /patreon-user-42|101723637|access-secret|refresh-output|v1-secret|wtdr-secret|sowb-secret/);
   }
+});
+
+test('Patreon OAuth success diagnostics log only verified bounded username safely', async () => {
+  const names = [
+    { attributes: { vanity: 'verified-vanity', full_name: 'Full Name' }, expected: 'verified-vanity' },
+    { attributes: { vanity: null, full_name: 'Full Name' }, expected: 'Full Name' },
+    { attributes: { vanity: null, full_name: null }, expected: 'CouldNotFindName' },
+    { attributes: { vanity: 42, full_name: 'Full Name' }, expected: null },
+    { attributes: { vanity: `first\n${'x'.repeat(220)}` }, expected: `first\n${'x'.repeat(194)}` },
+  ];
+
+  for (const { attributes, expected } of names) {
+    const identityData = identity([], attributes);
+    const { handler, successLogs, logs } = createHarness({ identityData });
+    const result = await invoke(handler, { code: 'authorization-code', userName: 'spoofed-request-name' });
+    assert.equal(result.statusCode, 200);
+    assert.equal(parseBody(result).userInfo.userName, attributes.vanity ?? attributes.full_name ?? 'CouldNotFindName');
+    assert.equal(successLogs.length, 1);
+    const message = successLogs[0][0];
+    assert.equal(message.startsWith('po:success '), true);
+    assert.equal(message.includes('\n'), false, 'diagnostic must remain one physical line');
+    assert.deepEqual(parseSuccessLog(message), { patron_status: null, lifetimeSupport: null, userName: expected });
+    assert.doesNotMatch(message, /spoofed-request-name|patreon-user-42|access-secret|v1-secret|wtdr-secret|sowb-secret/);
+    assert.deepEqual(logs, []);
+  }
+
+  const astralName = '😀'.repeat(205);
+  const astralHarness = createHarness({ identityData: identity([], { vanity: astralName }) });
+  await invoke(astralHarness.handler);
+  assert.equal(Array.from(parseSuccessLog(astralHarness.successLogs[0][0]).userName).length, 200);
+
+  const nullNameHarness = createHarness({ identityData: identity([], { vanity: null, full_name: 123 }) });
+  const nullNameResult = await invoke(nullNameHarness.handler);
+  assert.equal(parseBody(nullNameResult).userInfo.userName, 123);
+  assert.equal(parseSuccessLog(nullNameHarness.successLogs[0][0]).userName, null);
+});
+
+test('Patreon OAuth successful logging remains nonfatal when console logging throws', async () => {
+  const { handler } = createHarness({ consoleLog: () => { throw new Error('logging unavailable'); } });
+  const result = await invoke(handler);
+  assert.equal(result.statusCode, 200);
+  assert.equal(parseBody(result).userInfo.supportsMe, true);
 });
 
 test('Patreon OAuth logging emits success diagnostics only after successful responses and keeps compact failure codes', async () => {
