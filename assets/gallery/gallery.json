@@ -263,6 +263,18 @@
         "a:benisboy14",
         "c:lopunny"
       ]
+    },
+    {
+      "id": "48004475",
+      "thumbSrc": "assets/gallery/thumb/48004475.webp",
+      "fullSrc": "assets/gallery/full/48004475.webp",
+      "entryAddedAt": "2026-10-01T10:39:55Z",
+      "tags": [
+        "a:benisboy14",
+        "c:lopunny",
+        "wallpaper",
+        "s:pokemon"
+      ]
     }
   ],
   "dashboardTileImageIds": [
@@ -274,7 +286,6 @@
     "a:benisboy14": "BenisBoy14",
     "a:skeleion": "Skeleion",
     "a:unknown": "Unknown",
-    "s:pokemon": "Pokémon",
     "c:cynthia": "Cynthia",
     "c:lopunny": "Lopunny",
     "c:lucario": "Lucario",
@@ -283,6 +294,7 @@
     "easter": "Easter",
     "halloween": "Halloween",
     "nsfw": "Nsfw",
+    "s:pokemon": "Pokémon",
     "wallpaper": "Wallpaper"
   }
 }
