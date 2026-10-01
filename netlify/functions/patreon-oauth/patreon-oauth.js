@@ -1,7 +1,9 @@
 const crypto = require('crypto');
 
 const CAMPAIGN_ID = '12346885';
+const OWNER_PATREON_USER_ID = '101723637';
 const ACTIVE_PATRON_STATUS = 'active_patron';
+const LOGGABLE_PATRON_STATUSES = new Set(['active_patron', 'former_patron', 'declined_patron']);
 // Eligibility is strictly greater than 500 cents (> $5); this assumes the campaign currency is USD.
 const LIFETIME_SUPPORT_THRESHOLD_CENTS = 500;
 const KEY_ENVIRONMENT_NAMES = {
@@ -15,8 +17,10 @@ const TOKEN_URL = 'https://www.patreon.com/api/oauth2/token';
 const IDENTITY_URL = 'https://www.patreon.com/api/oauth2/v2/identity';
 const APPLICATION_USER_AGENT = 'BenisBoyLibrary/1.0 (+https://benis-boy.github.io/library/)';
 
-// All keys share this policy: an active supporter OR lifetime payments above the threshold.
-const isEligibleForKeys = (membership) => {
+// All keys share this policy: the owner, an active supporter, or lifetime payments above the threshold.
+const isEligibleForKeys = (membership, patreonUserId) => {
+  if (patreonUserId === OWNER_PATREON_USER_ID) return true;
+
   const attributes = membership?.attributes;
   if (attributes?.patron_status === ACTIVE_PATRON_STATUS) return true;
 
@@ -106,6 +110,24 @@ const getOwnMembership = (userInfo) => {
   ) ?? null;
 };
 
+const logSuccessfulAuthentication = (membership) => {
+  const attributes = membership?.attributes;
+  const patronStatus = LOGGABLE_PATRON_STATUSES.has(attributes?.patron_status)
+    ? attributes.patron_status
+    : null;
+  const lifetimeSupport = attributes?.campaign_lifetime_support_cents;
+  const safeLifetimeSupport =
+    typeof lifetimeSupport === 'number' && Number.isFinite(lifetimeSupport) && lifetimeSupport >= 0
+      ? lifetimeSupport
+      : null;
+
+  try {
+    console.log(`po:success ${JSON.stringify({ patron_status: patronStatus, lifetimeSupport: safeLifetimeSupport })}`);
+  } catch {
+    // Diagnostics must never turn an otherwise successful authentication into a failure.
+  }
+};
+
 const getKeys = (isEligible, setFailureStage) => {
   const keys = { v1: 'NOT_ALLOWED', WtDR: 'NOT_ALLOWED', SoWB: 'NOT_ALLOWED' };
   if (isEligible) {
@@ -137,7 +159,7 @@ const signPatreonUserId = (patreonUserId, setFailureStage) => {
 const makeSuccessfulResponse = (token, userInfo, membership, patreonUserId, setFailureStage) => {
   const userAttributes = userInfo.data.attributes ?? {};
   const userName = userAttributes.vanity ?? userAttributes.full_name ?? 'CouldNotFindName';
-  const supportsMe = isEligibleForKeys(membership);
+  const supportsMe = isEligibleForKeys(membership, patreonUserId);
   const keys = getKeys(supportsMe, setFailureStage);
   const signedUser = signPatreonUserId(patreonUserId, setFailureStage);
 
@@ -217,7 +239,9 @@ exports.handler = async (event) => {
     const successfulResponse = makeSuccessfulResponse(token, userInfo, membership, patreonUserId, (stage) => {
       failureStage = stage;
     });
-    return response(200, headers, JSON.stringify(successfulResponse));
+    const serializedResponse = JSON.stringify(successfulResponse);
+    logSuccessfulAuthentication(membership);
+    return response(200, headers, serializedResponse);
   } catch {
     logFailure(failureStage);
     return response(500, headers, 'Patreon authentication failed. Check server configuration and try again.');
