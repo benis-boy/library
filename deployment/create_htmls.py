@@ -1,5 +1,6 @@
 import html
 import hashlib
+from typing import Optional
 import json
 import math
 import os
@@ -36,12 +37,13 @@ def clean_markdown_file(file_path: str, output_file_path: str):
         file.write(content)
 
 
-def separate_volumes(input_file_path: str, book_id: str):
+def separate_volumes(input_file_path: str, book_id: str) -> dict[str, int]:
     with open(input_file_path, 'r', encoding='utf-8') as file:
         content = file.read()
 
     volume_pattern = re.compile(r'(?:^|\n)(# .+?)(?=\n# |\Z)', re.DOTALL | re.MULTILINE)
     volumes = volume_pattern.findall(content)
+    source_volume_order: dict[str, int] = {}
 
     for volume in volumes:
         lines = volume.split('\n', 1)
@@ -52,6 +54,7 @@ def separate_volumes(input_file_path: str, book_id: str):
             folder_name = lines[0].strip('# ').strip()
             volume_content = ''
 
+        source_volume_order.setdefault(folder_name, len(source_volume_order))
         volume_content = volume_content.rstrip('\n')
 
         folder_path = os.path.join(os.path.dirname(input_file_path), book_id, folder_name)
@@ -60,6 +63,8 @@ def separate_volumes(input_file_path: str, book_id: str):
         volume_file_path = os.path.join(folder_path, f"{folder_name}.md")
         with open(volume_file_path, 'w', encoding='utf-8') as volume_file:
             volume_file.write(volume_content)
+
+    return source_volume_order
 
 
 def count_words(text: str):
@@ -207,9 +212,18 @@ def process_book(book_path: str, current_directory: str):
                 )
 
 
-def _get_volume_sort_key(item: tuple[str, list[tuple[str, str]]]):
+def _get_volume_sort_key(
+    item: tuple[str, list[tuple[str, str]]],
+    source_volume_order: Optional[dict[str, int]] = None,
+):
     match = re.search(r'\d+', item[0])
-    return int(match.group()) if match else 0
+    volume_number = int(match.group()) if match else 0
+    source_order = (source_volume_order or {}).get(item[0])
+    if source_order is not None:
+        return volume_number, 0, source_order, item[0]
+
+    # Volumes absent from the source-order map keep a deterministic lexical fallback.
+    return volume_number, 1, 0, item[0]
 
 
 def _to_runtime_chapter_path(path: str):
@@ -220,7 +234,11 @@ def _build_chapter_id(runtime_chapter_path: str):
     return hashlib.sha1(runtime_chapter_path.encode('utf-8')).hexdigest()[:8]
 
 
-def build_chapter_manifest(directory: str, book_id: str):
+def build_chapter_manifest(
+    directory: str,
+    book_id: str,
+    source_volume_order: Optional[dict[str, int]] = None,
+):
     html_files: list[str] = []
 
     for root, _, files in os.walk(directory):
@@ -244,7 +262,10 @@ def build_chapter_manifest(directory: str, book_id: str):
             volume_dict[volume_name] = []
         volume_dict[volume_name].append((chapter_name, file_path))
 
-    sorted_volumes = sorted(volume_dict.items(), key=_get_volume_sort_key)
+    sorted_volumes = sorted(
+        volume_dict.items(),
+        key=lambda item: _get_volume_sort_key(item, source_volume_order),
+    )
 
     chapters: list[dict[str, str]] = []
     chapter_ids: dict[str, str] = {}
@@ -300,11 +321,11 @@ if __name__ == '__main__':
 
     trimmed = '.trimmed.'.join(export_md_file.split('.'))
     clean_markdown_file(export_md_file, trimmed)
-    separate_volumes(trimmed, book_id)
+    source_volume_order = separate_volumes(trimmed, book_id)
 
     process_book(os.path.join(current_dir, book_id), current_dir)
 
-    manifest = build_chapter_manifest(current_dir, book_id)
+    manifest = build_chapter_manifest(current_dir, book_id, source_volume_order)
     manifest_path = sys.argv[3] if len(sys.argv) >= 4 else os.path.join(current_dir, f'{book_id}_chapters_manifest.json')
     write_json(manifest_path, manifest)
 

@@ -2,6 +2,7 @@
 
 ## Encrypted Folders
 - WtDR/Data
+- PSSJ/V11 - Destiny Deoxys
 
 ## Encrypted Files
 
