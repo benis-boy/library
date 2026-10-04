@@ -140,7 +140,7 @@
     {
       "chapterId": "97d513ca",
       "chapter": "PSSJ/V2 - Trainer School/12_Criminals.html",
-      "contentVersion": "2",
+      "contentVersion": "4",
       "title": "12 Criminals",
       "isSecured": false,
       "volume": "V2 - Trainer School"
@@ -700,7 +700,7 @@
     {
       "chapterId": "5a357f24",
       "chapter": "PSSJ/V10 - Intergalactic/07_Play Hard.html",
-      "contentVersion": "1",
+      "contentVersion": "2",
       "title": "07 Play Hard",
       "isSecured": false,
       "volume": "V10 - Intergalactic"
@@ -784,6 +784,158 @@
       "title": "02 Magearna's Mess of a Mind",
       "isSecured": false,
       "volume": "V11 - Intermission"
+    },
+    {
+      "chapterId": "174cf4f1",
+      "chapter": "PSSJ/V11 - Destiny Deoxys/01_Walk of Shame.html",
+      "contentVersion": "1",
+      "title": "01 Walk of Shame",
+      "isSecured": true,
+      "volume": "V11 - Destiny Deoxys"
+    },
+    {
+      "chapterId": "bc92c1c8",
+      "chapter": "PSSJ/V11 - Destiny Deoxys/02_Massive MooMoo Milkers.html",
+      "contentVersion": "1",
+      "title": "02 Massive MooMoo Milkers",
+      "isSecured": true,
+      "volume": "V11 - Destiny Deoxys"
+    },
+    {
+      "chapterId": "f2473187",
+      "chapter": "PSSJ/V11 - Destiny Deoxys/03_Farm Stroll.html",
+      "contentVersion": "1",
+      "title": "03 Farm Stroll",
+      "isSecured": true,
+      "volume": "V11 - Destiny Deoxys"
+    },
+    {
+      "chapterId": "2c4a1b69",
+      "chapter": "PSSJ/V11 - Destiny Deoxys/04_Mr. Flint and Steel.html",
+      "contentVersion": "1",
+      "title": "04 Mr. Flint and Steel",
+      "isSecured": true,
+      "volume": "V11 - Destiny Deoxys"
+    },
+    {
+      "chapterId": "5b3d8401",
+      "chapter": "PSSJ/V11 - Destiny Deoxys/05_Drunk.html",
+      "contentVersion": "1",
+      "title": "05 Drunk",
+      "isSecured": true,
+      "volume": "V11 - Destiny Deoxys"
+    },
+    {
+      "chapterId": "2efd5169",
+      "chapter": "PSSJ/V11 - Destiny Deoxys/06_Aurora Event.html",
+      "contentVersion": "1",
+      "title": "06 Aurora Event",
+      "isSecured": true,
+      "volume": "V11 - Destiny Deoxys"
+    },
+    {
+      "chapterId": "d1d47194",
+      "chapter": "PSSJ/V11 - Destiny Deoxys/07_A God from Outer Space.html",
+      "contentVersion": "1",
+      "title": "07 A God from Outer Space",
+      "isSecured": true,
+      "volume": "V11 - Destiny Deoxys"
+    },
+    {
+      "chapterId": "517c59b4",
+      "chapter": "PSSJ/V11 - Destiny Deoxys/08_Hospital.html",
+      "contentVersion": "1",
+      "title": "08 Hospital",
+      "isSecured": true,
+      "volume": "V11 - Destiny Deoxys"
+    },
+    {
+      "chapterId": "0cf59485",
+      "chapter": "PSSJ/V11 - Destiny Deoxys/09_Mega Progress.html",
+      "contentVersion": "1",
+      "title": "09 Mega Progress",
+      "isSecured": true,
+      "volume": "V11 - Destiny Deoxys"
+    },
+    {
+      "chapterId": "08fbf1f1",
+      "chapter": "PSSJ/V11 - Destiny Deoxys/10_Magearna is Useful Now.html",
+      "contentVersion": "1",
+      "title": "10 Magearna is Useful Now?",
+      "isSecured": true,
+      "volume": "V11 - Destiny Deoxys"
+    },
+    {
+      "chapterId": "fab8c53b",
+      "chapter": "PSSJ/V11 - Destiny Deoxys/11_Empoleon's Empire.html",
+      "contentVersion": "1",
+      "title": "11 Empoleon's Empire",
+      "isSecured": true,
+      "volume": "V11 - Destiny Deoxys"
+    },
+    {
+      "chapterId": "7175e861",
+      "chapter": "PSSJ/V11 - Destiny Deoxys/12_Haylie is Strange.html",
+      "contentVersion": "1",
+      "title": "12 Haylie is Strange",
+      "isSecured": true,
+      "volume": "V11 - Destiny Deoxys"
+    },
+    {
+      "chapterId": "1b83183d",
+      "chapter": "PSSJ/V11 - Destiny Deoxys/13_Lore Dump.html",
+      "contentVersion": "1",
+      "title": "13 Lore Dump",
+      "isSecured": true,
+      "volume": "V11 - Destiny Deoxys"
+    },
+    {
+      "chapterId": "e463de17",
+      "chapter": "PSSJ/V11 - Destiny Deoxys/14_Real Meets Real.html",
+      "contentVersion": "1",
+      "title": "14 Real Meets Real",
+      "isSecured": true,
+      "volume": "V11 - Destiny Deoxys"
+    },
+    {
+      "chapterId": "a12664e7",
+      "chapter": "PSSJ/V11 - Destiny Deoxys/15_Into Battle.html",
+      "contentVersion": "1",
+      "title": "15 Into Battle",
+      "isSecured": true,
+      "volume": "V11 - Destiny Deoxys"
+    },
+    {
+      "chapterId": "d31cec7d",
+      "chapter": "PSSJ/V11 - Destiny Deoxys/16_Battle against a God Pt1.html",
+      "contentVersion": "1",
+      "title": "16 Battle against a God Pt1",
+      "isSecured": true,
+      "volume": "V11 - Destiny Deoxys"
+    },
+    {
+      "chapterId": "acbbaf5f",
+      "chapter": "PSSJ/V11 - Destiny Deoxys/17_Battle against a God Pt2.html",
+      "contentVersion": "1",
+      "title": "17 Battle against a God Pt2",
+      "isSecured": true,
+      "volume": "V11 - Destiny Deoxys"
+    },
+    {
+      "chapterId": "6664e954",
+      "chapter": "PSSJ/V11 - Destiny Deoxys/18_Mega Lopunny.html",
+      "contentVersion": "1",
+      "title": "18 Mega Lopunny",
+      "isSecured": true,
+      "volume": "V11 - Destiny Deoxys"
+    },
+    {
+      "chapterId": "d5216527",
+      "chapter": "PSSJ/V11 - Destiny Deoxys/19_Hospital Again.html",
+      "contentVersion": "2",
+      "title": "19 Hospital Again",
+      "isSecured": true,
+      "volume": "V11 - Destiny Deoxys"
     }
   ]
 }
