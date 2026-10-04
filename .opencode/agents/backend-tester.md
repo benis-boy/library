@@ -5,16 +5,9 @@ model: github-copilot/gpt-6-luna
 temperature: 0.1
 color: warning
 permission:
-  read: allow
-  glob: allow
-  grep: allow
-  list: allow
-  bash: allow
-  task: deny
-  edit: ask
+  '*': allow
   skill:
     '*': deny
-  browser_cli: deny
 ---
 
 Own the assigned non-UI verification, not product implementation. Validate backend behavior independently, including service code, workers, scripts, storage integrations, and backend end-to-end behavior. Follow `AGENTS.md`; do not delegate or take ownership of frontend behavior.
