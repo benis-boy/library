@@ -152,6 +152,7 @@ export const Navigator = ({
       }}
       variant={hasTouch || !isLargeScreen ? 'temporary' : 'persistent'}
       anchor="left"
+      disableSwipeToOpen={false}
       open={open}
       onClose={() => setOpen(false)}
       onOpen={() => setOpen(true)}

@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { expect, waitFor, within } from 'storybook/test';
+import { expect, fireEvent, waitFor, within } from 'storybook/test';
 import './index.css';
 import pssjManifest from '../book-data/PSSJ_raw/PSSJ_chapters.json';
 import sowbManifest from '../book-data/SoWB_raw/SoWB_chapters.json';
@@ -331,12 +331,15 @@ const meta = {
     storageState: { control: false },
     selectedBook: { control: false },
     selectedChapter: { control: false },
+    simulateTouch: { control: false },
   },
 } satisfies Meta<typeof FullAppHarness>;
 
 export default meta;
 
 type Story = StoryObj<typeof meta>;
+type StoryPlay = NonNullable<Story['play']>;
+type StoryPlayContext = Parameters<StoryPlay>[0];
 
 export const ChangingBooksUpdatesTitleAndNavigator: Story = {
   name: '1. Changing books updates title and navigator',
@@ -466,6 +469,7 @@ export const NavigatorSelectionAndNextChapterFlow: Story = {
 
 export const ContinueWhereYouLeftOffLoadsStoredChapter: Story = {
   name: '5. Continue where you left off loads stored chapter',
+  tags: ['continue-auth-regression'],
   args: {
     storageState: {
       SELECTED_BOOK: 'WtDR',
@@ -488,6 +492,250 @@ export const ContinueWhereYouLeftOffLoadsStoredChapter: Story = {
       await verifyChapter(canvasElement, wtdrFirstSecuredChapter);
     });
   },
+};
+
+export const ContinueFreeChapterWhileLoggedOut: Story = {
+  name: '8. Logged-out Continue opens the saved free chapter',
+  tags: ['continue-auth-regression'],
+  args: {
+    isLoggedIn: false,
+    isSupporter: false,
+    storageState: {
+      SELECTED_BOOK: 'PSSJ',
+      PSSJ_SELECTED_CHAPTER: pssjSecondChapter.chapterId,
+    },
+  },
+  play: async ({ canvas, canvasElement, step, userEvent }) => {
+    await step('Continue opens the canonical saved free chapter without login', async () => {
+      const tile = await getTileByHeading(canvas, PSSJ_BOOK_TITLE);
+      await userEvent.click(within(tile).getByRole('button', { name: 'Continue where you left off' }));
+
+      await verifyChapter(canvasElement, pssjSecondChapter);
+      expect(window.localStorage.getItem('PSSJ_SELECTED_CHAPTER')).toBe(pssjSecondChapter.chapterId);
+    });
+  },
+};
+
+export const ContinueSecuredChapterWhileLoggedOut: Story = {
+  name: '9. Logged-out Continue retains saved secured chapter behind login gate',
+  tags: ['continue-auth-regression'],
+  args: {
+    isLoggedIn: false,
+    isSupporter: false,
+    storageState: {
+      SELECTED_BOOK: 'WtDR',
+      WtDR_SELECTED_CHAPTER: wtdrFirstSecuredChapter.chapterId,
+    },
+  },
+  play: async ({ canvas, canvasElement, step, userEvent }) => {
+    await step('Continue preserves the saved secured route and displays the login gate', async () => {
+      const tile = await getTileByHeading(canvas, WTDR_BOOK_TITLE);
+      await userEvent.click(within(tile).getByRole('button', { name: 'Continue where you left off' }));
+
+      await verifyBlockedChapter({
+        canvas,
+        canvasElement,
+        chapter: wtdrFirstSecuredChapter,
+        heading: 'Access Restricted',
+        body: /You need to log in to view this content/i,
+      });
+      expect(window.localStorage.getItem('WtDR_SELECTED_CHAPTER')).toBe(wtdrFirstSecuredChapter.chapterId);
+    });
+  },
+};
+
+export const ContinueSecuredChapterAsLoggedInNonSupporter: Story = {
+  name: '10. Non-supporter Continue retains saved secured chapter behind Patreon gate',
+  tags: ['continue-auth-regression'],
+  args: {
+    isLoggedIn: true,
+    isSupporter: false,
+    storageState: {
+      SELECTED_BOOK: 'WtDR',
+      WtDR_SELECTED_CHAPTER: wtdrFirstSecuredChapter.chapterId,
+    },
+  },
+  play: async ({ canvas, canvasElement, step, userEvent }) => {
+    await step('Continue preserves the saved secured route and displays the Patreon gate', async () => {
+      const tile = await getTileByHeading(canvas, WTDR_BOOK_TITLE);
+      await userEvent.click(within(tile).getByRole('button', { name: 'Continue where you left off' }));
+
+      await verifyBlockedChapter({
+        canvas,
+        canvasElement,
+        chapter: wtdrFirstSecuredChapter,
+        heading: 'Support me on Patreon',
+        body: /To access the full content, please consider subscribing to me on/i,
+      });
+      expect(window.localStorage.getItem('WtDR_SELECTED_CHAPTER')).toBe(wtdrFirstSecuredChapter.chapterId);
+    });
+  },
+};
+
+export const TouchNavigatorStartsVisible: Story = {
+  name: '11. Touch navigator starts open and has an accessible toggle',
+  tags: ['navigator-touch-regression'],
+  args: {
+    simulateTouch: true,
+    initialHash: getChapterHash(wtdrFirstChapter),
+    storageState: {
+      SELECTED_BOOK: 'WtDR',
+      WtDR_SELECTED_CHAPTER: wtdrFirstChapter.chapterId,
+    },
+  },
+  play: async ({ canvas, step, userEvent }) => {
+    await step('Fresh touch mount shows the navigator', async () => {
+      const navigatorFrame = await waitFor(() => {
+        const frame = document.querySelector('iframe[title="External HTML"]') as HTMLIFrameElement | null;
+        if (!frame?.contentDocument) {
+          throw new Error('Touch navigator iframe is not ready yet.');
+        }
+        return frame;
+      });
+      await expect(navigatorFrame).toBeVisible();
+    });
+
+    await step('Closed navigator exposes an accessible portrait toggle and can be reopened by touch swipe', async () => {
+      const backdrop = document.querySelector('.MuiBackdrop-root');
+      if (!(backdrop instanceof HTMLElement)) {
+        throw new Error('The open mobile navigator backdrop was not found.');
+      }
+      await userEvent.click(backdrop);
+
+      await waitFor(() => expect(document.querySelector('iframe[title="External HTML"]')).not.toBeVisible());
+      const navigatorToggle = await canvas.findByRole('button', { name: 'Toggle chapter navigator' });
+      await expect(navigatorToggle).toBeVisible();
+      await userEvent.click(navigatorToggle);
+      await waitFor(() => expect(document.querySelector('iframe[title="External HTML"]')).toBeVisible());
+
+      const reopenedBackdrop = document.querySelector('.MuiBackdrop-root');
+      if (!(reopenedBackdrop instanceof HTMLElement)) {
+        throw new Error('The reopened mobile navigator backdrop was not found.');
+      }
+      await userEvent.click(reopenedBackdrop);
+      await waitFor(() => expect(document.querySelector('iframe[title="External HTML"]')).not.toBeVisible());
+
+      const swipeArea = await waitFor(() => {
+        const area = document.querySelector('.PrivateSwipeArea-root');
+        if (!(area instanceof HTMLElement)) {
+          throw new Error('The navigator swipe-to-open area was not rendered.');
+        }
+        return area;
+      });
+
+      const touchAt = (clientX: number) => new Touch({ identifier: 1, target: swipeArea, clientX, clientY: 180 });
+      const startTouch = touchAt(2);
+      const endTouch = touchAt(170);
+      fireEvent.touchStart(swipeArea, { touches: [startTouch], changedTouches: [startTouch] });
+      fireEvent.touchMove(swipeArea, { touches: [endTouch], changedTouches: [endTouch] });
+      fireEvent.touchEnd(swipeArea, { touches: [], changedTouches: [endTouch] });
+
+      await waitFor(() => expect(document.querySelector('iframe[title="External HTML"]')).toBeVisible());
+    });
+  },
+};
+
+export const TouchHomepageStartsVisibleWithoutNavigator: Story = {
+  name: '12. Touch homepage keeps library visible without navigator overlay',
+  tags: ['navigator-touch-regression'],
+  args: {
+    simulateTouch: true,
+  },
+  play: async ({ canvas, step }) => {
+    await step('Fresh touch homepage shows the library entry', async () => {
+      await expect(await canvas.findByText("BenisBoy's Library")).toBeVisible();
+    });
+
+    await step('Fresh touch homepage does not show the chapter navigator overlay', async () => {
+      const navigatorFrame = document.querySelector('iframe[title="External HTML"]');
+      if (navigatorFrame) {
+        await expect(navigatorFrame).not.toBeVisible();
+      }
+
+      const backdrop = document.querySelector('.MuiBackdrop-root');
+      if (backdrop) {
+        await expect(backdrop).not.toBeVisible();
+      }
+    });
+  },
+};
+
+const verifyTouchHeaderControlSizing = async (
+  canvas: ReturnType<typeof within>,
+  step: StoryPlayContext['step'],
+  userEvent: StoryPlayContext['userEvent'],
+  viewport: { width: number; height: number }
+) => {
+  await step(`Runner uses a ${viewport.width}x${viewport.height} portrait viewport`, async () => {
+    expect(window.innerWidth).toBe(viewport.width);
+    expect(window.innerHeight).toBe(viewport.height);
+  });
+
+  await step('Closing the fresh reader navigator shows the mobile toggle', async () => {
+    const backdrop = document.querySelector('.MuiBackdrop-root');
+    if (!(backdrop instanceof HTMLElement)) {
+      throw new Error('The open mobile navigator backdrop was not found.');
+    }
+    await userEvent.click(backdrop);
+    await waitFor(() => expect(document.querySelector('iframe[title="External HTML"]')).not.toBeVisible());
+
+    await expect(await canvas.findByRole('button', { name: 'Toggle chapter navigator' })).toBeVisible();
+  });
+
+  await step('Navigator, Home, and Patreon controls each render at equal 44x44 CSS pixels', async () => {
+    const navigatorToggle = await canvas.findByRole('button', { name: 'Toggle chapter navigator' });
+    const homeButton = document.getElementById('home-button');
+    const patreonLink = document.getElementById('patreon-link');
+    if (!(homeButton instanceof HTMLElement) || !(patreonLink instanceof HTMLElement)) {
+      throw new Error('The Home button or Patreon link was not rendered.');
+    }
+
+    const controls = [navigatorToggle, homeButton, patreonLink];
+    const rectangles = controls.map((control) => control.getBoundingClientRect());
+    for (const [index, control] of controls.entries()) {
+      await expect(control).toBeVisible();
+      expect(rectangles[index].width).toBe(44);
+      expect(rectangles[index].height).toBe(44);
+    }
+
+    expect(rectangles[0].width).toBe(rectangles[1].width);
+    expect(rectangles[0].height).toBe(rectangles[1].height);
+    expect(rectangles[0].width).toBe(rectangles[2].width);
+    expect(rectangles[0].height).toBe(rectangles[2].height);
+  });
+};
+
+const makeTouchHeaderControlSizingPlay = (viewport: { width: number; height: number }) =>
+  (async ({ canvas, step, userEvent }) => {
+    await verifyTouchHeaderControlSizing(canvas, step, userEvent, viewport);
+  }) satisfies StoryPlay;
+
+export const TouchHeaderControlsMatchAt375x812: Story = {
+  name: '13. Touch header controls match at 375x812',
+  tags: ['navigator-touch-regression'],
+  args: {
+    simulateTouch: true,
+    initialHash: getChapterHash(wtdrFirstChapter),
+    storageState: {
+      SELECTED_BOOK: 'WtDR',
+      WtDR_SELECTED_CHAPTER: wtdrFirstChapter.chapterId,
+    },
+  },
+  play: makeTouchHeaderControlSizingPlay({ width: 375, height: 812 }),
+};
+
+export const TouchHeaderControlsMatchAt390x844: Story = {
+  name: '14. Touch header controls match at 390x844',
+  tags: ['navigator-touch-regression'],
+  args: {
+    simulateTouch: true,
+    initialHash: getChapterHash(wtdrFirstChapter),
+    storageState: {
+      SELECTED_BOOK: 'WtDR',
+      WtDR_SELECTED_CHAPTER: wtdrFirstChapter.chapterId,
+    },
+  },
+  play: makeTouchHeaderControlSizingPlay({ width: 390, height: 844 }),
 };
 
 export const NonSupporterOpeningEncryptedChapterShowsPatreonMessage: Story = {

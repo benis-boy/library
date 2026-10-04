@@ -37,13 +37,10 @@ export function InnerApp() {
   const location = useLocation();
   const isReaderRoute = location.pathname.startsWith('/reader/');
   const isGalleryRoute = location.pathname === ROUTE_PATHS.gallery;
-  const [isHeaderVisible, setIsHeaderVisible] = useState(true);
-  const [isNavigatorVisible, setIsNavigatorVisible] = useState(
-    () => !('ontouchstart' in window || navigator.maxTouchPoints > 0)
-  );
-  const [galleryTagOptions, setGalleryTagOptions] = useState<GalleryTagOption[]>([]);
-
   const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+  const [isHeaderVisible, setIsHeaderVisible] = useState(true);
+  const [isNavigatorVisible, setIsNavigatorVisible] = useState(() => !hasTouch || isReaderRoute);
+  const [galleryTagOptions, setGalleryTagOptions] = useState<GalleryTagOption[]>([]);
 
   const scrollerRef = useRef<HTMLDivElement>(null);
   const drawerRef = useRef<HTMLDivElement>(null);

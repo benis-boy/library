@@ -8,6 +8,8 @@ import { fetchNotificationSummary } from '../comments/comments-api';
 import { NotificationsModal } from './notifications-modal';
 import { getHeaderHeightPx } from '../header-layout';
 
+const navigationButtonClassName = 'bg-[#BE3144] h-11 w-11 flex shrink-0 items-center justify-center';
+
 const WebsiteHeader = ({
   isHeaderVisible,
   setIsHeaderVisible,
@@ -147,6 +149,7 @@ const WebsiteHeader = ({
       className="w-full"
       variant={hasTouch && !wasVisible ? 'temporary' : 'persistent'}
       anchor="top"
+      disableSwipeToOpen={false}
       open={isHeaderVisible}
       onClose={() => setIsHeaderVisible(false)}
       onOpen={() => setIsHeaderVisible(true)}
@@ -162,7 +165,9 @@ const WebsiteHeader = ({
         <div className="flex items-center my-2 space-x-2">
           <button
             id="toggleNav"
-            className="bg-[#BE3144] h-11 w-11 flex items-center justify-center p-2 portrait:hidden"
+            type="button"
+            aria-label="Toggle chapter navigator"
+            className={`${navigationButtonClassName} p-2`}
             onClick={() => {
               setNavigatorVisible((old) => !old);
             }}
@@ -182,7 +187,7 @@ const WebsiteHeader = ({
           <button
             id="home-button"
             onClick={() => navigate('/')}
-            className="bg-[#BE3144] p-2 h-11 w-11 flex items-center justify-center"
+            className={`${navigationButtonClassName} p-2`}
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -201,7 +206,7 @@ const WebsiteHeader = ({
           <button
             id="patreon-link"
             onClick={() => window.open('https://patreon.com/BenisBoy16', '_blank')}
-            className="bg-[#BE3144] p-1 h-11 w-11 flex items-center justify-center"
+            className={`${navigationButtonClassName} p-1`}
           >
             <img src="assets/pfp_patreon.png" alt="Patreon" width="36" height="36" className="inline" />
           </button>

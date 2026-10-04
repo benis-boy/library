@@ -15,6 +15,7 @@ export type FullAppHarnessProps = {
   userName?: string;
   selectedBook?: SourceType;
   selectedChapter?: string;
+  simulateTouch?: boolean;
   storageState?: Record<string, string>;
   commentsApiMockState?: MockCommentsApiState;
 };
@@ -190,6 +191,7 @@ export const FullAppHarness = ({
   userName = 'Storybook Reader',
   selectedBook,
   selectedChapter,
+  simulateTouch = false,
   storageState,
   commentsApiMockState,
 }: FullAppHarnessProps) => {
@@ -197,6 +199,10 @@ export const FullAppHarness = ({
 
   useLayoutEffect(() => {
     const previousHash = window.location.hash;
+    const previousMaxTouchPoints = Object.getOwnPropertyDescriptor(window.navigator, 'maxTouchPoints');
+    if (simulateTouch) {
+      Object.defineProperty(window.navigator, 'maxTouchPoints', { configurable: true, value: 1 });
+    }
     const restoreSecureChapterFetch = installSecureChapterFetchMock(window.fetch.bind(window));
     const restoreCommentsApiFetch = commentsApiMockState
       ? installCommentsApiMock(window.fetch.bind(window), commentsApiMockState)
@@ -223,9 +229,14 @@ export const FullAppHarness = ({
       restoreCommentsApiFetch?.();
       restoreSecureChapterFetch();
       resetAppStorage();
+      if (previousMaxTouchPoints) {
+        Object.defineProperty(window.navigator, 'maxTouchPoints', previousMaxTouchPoints);
+      } else {
+        Reflect.deleteProperty(window.navigator, 'maxTouchPoints');
+      }
       window.history.replaceState({}, document.title, `${window.location.pathname}${window.location.search}${previousHash}`);
     };
-  }, [commentsApiMockState, initialHash, selectedBook, selectedChapter, storageState]);
+  }, [commentsApiMockState, initialHash, selectedBook, selectedChapter, simulateTouch, storageState]);
 
   if (!isReady) {
     return null;
