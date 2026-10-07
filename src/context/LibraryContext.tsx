@@ -15,7 +15,7 @@ export {
 
 export type AccessDeniedReason = 'login_required' | 'supporter_required';
 
-export type ChapterSelectionResult = { ok: true } | { ok: false; reason: AccessDeniedReason };
+export type ChapterSelectionResult = { ok: true } | { ok: false; reason: AccessDeniedReason | 'superseded' };
 
 export type ChapterNavigationEntry = {
   chapterId?: string;
@@ -38,7 +38,7 @@ type ChapterMetadataPayload = {
 
 export type BookSelectionResult =
   | { ok: true; mode: 'selected_only' | 'loaded_chapter' | 'loaded_stored_chapter' }
-  | { ok: false; reason: AccessDeniedReason };
+  | { ok: false; reason: AccessDeniedReason | 'superseded' };
 
 export const getReaderRoute = (book: SourceType, chapter?: string) =>
   chapter
@@ -49,17 +49,20 @@ export type LibraryData = {
   selectedBook: SourceType;
   selectedChapter: string | undefined;
   content: string;
+  isLoading: boolean;
+  loadError: string | null;
   isSecured: boolean | undefined;
   accessDeniedReason: AccessDeniedReason | null;
 };
 
 export type LibraryContextType = {
   libraryData: LibraryData;
-  setSelectedBook: (book: SourceType, loadChapterToo: boolean) => Promise<BookSelectionResult>;
+  setSelectedBook: (book: SourceType, loadChapterToo: boolean) => Promise<BookSelectionResult | undefined>;
   setSelectedChapter: (book: SourceType, chapter: string, secured?: boolean) => Promise<ChapterSelectionResult>;
 };
 
 const chapterMetadataCache = new Map<SourceType, Promise<ChapterNavigationEntry[]>>();
+export const clearChapterMetadataCache = () => chapterMetadataCache.clear();
 const CHAPTER_ID_PATTERN = /^[0-9a-f]{8}$/i;
 
 const isSourceType = (value: string | null): value is SourceType =>
@@ -315,7 +318,7 @@ export const getChapterSecurityForBook = async (book: SourceType, chapter: strin
   return chapterEntry?.isSecured;
 };
 
-export function useLoadContent(setData: (data: string) => void) {
+export function useLoadContent() {
   const pContext = useContext(PatreonContext);
   const encryptionPassword = pContext?.encryptionPassword ?? '';
   const encryptionPasswordV2 = pContext?.encryptionPasswordV2;
@@ -341,12 +344,13 @@ export function useLoadContent(setData: (data: string) => void) {
           data = await decryptString(data, key);
         }
 
-        setData(data);
+        return data;
       } catch (error) {
         console.error('Error loading content:', error);
+        throw error;
       }
     },
-    [encryptionPassword, encryptionPasswordV2, setData]
+    [encryptionPassword, encryptionPasswordV2]
   );
 
   return loadContent;

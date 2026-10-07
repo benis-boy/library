@@ -1,10 +1,11 @@
-import { useLayoutEffect, useState } from 'react';
+import { useContext, useLayoutEffect, useState } from 'react';
 import { HashRouter } from 'react-router-dom';
 import wtdrManifest from '../../book-data/WtDR_raw/WtDR_chapters.json';
 import { InnerApp } from '../App';
 import type { SourceType } from '../constants';
 import { ConfigurationProvider } from '../context/ConfigurationProvider';
 import { LibraryProvider } from '../context/LibraryProvider';
+import { ConfigurationContext } from '../context/ConfigurationContext';
 import { installCommentsApiMock, type MockCommentsApiState } from './commentsApiMock';
 import { MockPatreonProvider } from './MockPatreonProvider';
 
@@ -16,6 +17,9 @@ export type FullAppHarnessProps = {
   selectedBook?: SourceType;
   selectedChapter?: string;
   simulateTouch?: boolean;
+  simulateIOS?: boolean;
+  showConfigurationTestControls?: boolean;
+  showAccessTestControls?: boolean;
   storageState?: Record<string, string>;
   commentsApiMockState?: MockCommentsApiState;
 };
@@ -147,6 +151,37 @@ const appStorageKeys = [
   'forceRelogin_2025_07',
 ];
 
+const ConfigurationTestControls = () => {
+  const { isDarkMode, setIsDarkMode, fontSize, setFontSize } = useContext(ConfigurationContext);
+  return (
+    <div className="fixed bottom-2 right-2 z-[3000] flex gap-2">
+      <button type="button" aria-label="Test toggle dark mode" onClick={() => setIsDarkMode((value) => !value)}>
+        {isDarkMode ? 'Dark' : 'Light'}
+      </button>
+      <button type="button" aria-label="Test increase font size" onClick={() => setFontSize((value) => value + 1)}>
+        Font {fontSize}
+      </button>
+    </div>
+  );
+};
+
+const AccessTestControls = ({
+  onToggleLogin,
+  onToggleSupporter,
+}: {
+  onToggleLogin: () => void;
+  onToggleSupporter: () => void;
+}) => (
+  <div className="fixed bottom-2 left-2 z-[3000] flex gap-2">
+    <button type="button" onClick={onToggleLogin}>
+      Test toggle login
+    </button>
+    <button type="button" onClick={onToggleSupporter}>
+      Test toggle supporter
+    </button>
+  </div>
+);
+
 const normalizeHash = (initialHash: string) => {
   if (!initialHash) {
     return '#/';
@@ -192,16 +227,33 @@ export const FullAppHarness = ({
   selectedBook,
   selectedChapter,
   simulateTouch = false,
+  simulateIOS = false,
+  showConfigurationTestControls = false,
+  showAccessTestControls = false,
   storageState,
   commentsApiMockState,
 }: FullAppHarnessProps) => {
   const [isReady, setIsReady] = useState(false);
+  const [harnessLoggedIn, setHarnessLoggedIn] = useState(isLoggedIn);
+  const [harnessSupporter, setHarnessSupporter] = useState(isSupporter);
+
+  useLayoutEffect(() => {
+    setHarnessLoggedIn(isLoggedIn);
+    setHarnessSupporter(isSupporter);
+  }, [isLoggedIn, isSupporter]);
 
   useLayoutEffect(() => {
     const previousHash = window.location.hash;
     const previousMaxTouchPoints = Object.getOwnPropertyDescriptor(window.navigator, 'maxTouchPoints');
-    if (simulateTouch) {
+    const previousUserAgent = Object.getOwnPropertyDescriptor(window.navigator, 'userAgent');
+    const previousPlatform = Object.getOwnPropertyDescriptor(window.navigator, 'platform');
+    if (simulateTouch || simulateIOS) {
       Object.defineProperty(window.navigator, 'maxTouchPoints', { configurable: true, value: 1 });
+    }
+    if (simulateIOS) {
+      Object.defineProperty(window.navigator, 'maxTouchPoints', { configurable: true, value: 5 });
+      Object.defineProperty(window.navigator, 'userAgent', { configurable: true, value: 'Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1' });
+      Object.defineProperty(window.navigator, 'platform', { configurable: true, value: 'MacIntel' });
     }
     const restoreSecureChapterFetch = installSecureChapterFetchMock(window.fetch.bind(window));
     const restoreCommentsApiFetch = commentsApiMockState
@@ -234,9 +286,19 @@ export const FullAppHarness = ({
       } else {
         Reflect.deleteProperty(window.navigator, 'maxTouchPoints');
       }
+      if (previousUserAgent) {
+        Object.defineProperty(window.navigator, 'userAgent', previousUserAgent);
+      } else {
+        Reflect.deleteProperty(window.navigator, 'userAgent');
+      }
+      if (previousPlatform) {
+        Object.defineProperty(window.navigator, 'platform', previousPlatform);
+      } else {
+        Reflect.deleteProperty(window.navigator, 'platform');
+      }
       window.history.replaceState({}, document.title, `${window.location.pathname}${window.location.search}${previousHash}`);
     };
-  }, [commentsApiMockState, initialHash, selectedBook, selectedChapter, simulateTouch, storageState]);
+  }, [commentsApiMockState, initialHash, selectedBook, selectedChapter, simulateIOS, simulateTouch, storageState]);
 
   if (!isReady) {
     return null;
@@ -245,8 +307,8 @@ export const FullAppHarness = ({
   return (
     <HashRouter>
       <MockPatreonProvider
-        isLoggedIn={isLoggedIn}
-        isSupporter={isSupporter}
+        isLoggedIn={harnessLoggedIn}
+        isSupporter={harnessSupporter}
         userName={userName}
         encryptionPasswordV2={{
           WtDR: STORYBOOK_WTDR_PASSWORD,
@@ -254,7 +316,14 @@ export const FullAppHarness = ({
       >
         <LibraryProvider>
           <ConfigurationProvider>
-            <InnerApp />
+        <InnerApp />
+        {showConfigurationTestControls ? <ConfigurationTestControls /> : null}
+        {showAccessTestControls ? (
+          <AccessTestControls
+            onToggleLogin={() => setHarnessLoggedIn((value) => !value)}
+            onToggleSupporter={() => setHarnessSupporter((value) => !value)}
+          />
+        ) : null}
           </ConfigurationProvider>
         </LibraryProvider>
       </MockPatreonProvider>

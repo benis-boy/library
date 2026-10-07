@@ -46,11 +46,13 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
   const handledCommentTargetKeyRef = useRef<string | null>(null);
   const lastParagraphScrollTargetKeyRef = useRef<string | null>(null);
   const {
-    libraryData: { content, selectedBook, selectedChapter, accessDeniedReason } = {
+    libraryData: { content, selectedBook, selectedChapter, accessDeniedReason, isLoading, loadError } = {
       content: '',
       selectedBook: undefined,
       selectedChapter: undefined,
       accessDeniedReason: null,
+      isLoading: false,
+      loadError: null,
     },
     setSelectedBook,
     setSelectedChapter,
@@ -155,6 +157,10 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
             navigate(targetPath, { replace: true });
           }
         } else {
+          if (selectedBook === routeBook && (isLoading || loadError)) {
+            return;
+          }
+
           const result = await setSelectedBook(routeBook, true);
           if (cancelled || !result) {
             return;
@@ -176,6 +182,12 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
         return;
       }
 
+      const currentSelection = selectedBook === routeInfo.book ? normalizeChapterReference(selectedChapter) : undefined;
+      const alreadyResolved =
+        currentSelection === routeInfo.chapter && (isLoading || content || accessDeniedReason || loadError);
+      // Claim the new selection synchronously, before this effect waits on route metadata.
+      const chapterRequest = alreadyResolved ? undefined : setSelectedChapter(routeInfo.book, routeInfo.chapter);
+
       const currentPath = (window.location.hash.replace(/^#/, '') || '/').split('?')[0];
       const canonicalPath = await getReaderRouteForChapter(routeInfo.book, routeInfo.chapter).catch(() =>
         getReaderRoute(routeInfo.book, routeInfo.chapter)
@@ -185,12 +197,11 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
         return;
       }
 
-      const currentSelection = selectedBook === routeInfo.book ? normalizeChapterReference(selectedChapter) : undefined;
-      if (currentSelection === routeInfo.chapter && (content || accessDeniedReason)) {
+      if (alreadyResolved) {
         return;
       }
 
-      const result = await setSelectedChapter(routeInfo.book, routeInfo.chapter);
+      const result = await chapterRequest;
       if (cancelled || !result) {
         return;
       }
@@ -204,6 +215,8 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
   }, [
     accessDeniedReason,
     content,
+    isLoading,
+    loadError,
     location.search,
     navigate,
     params.bookId,
@@ -387,10 +400,8 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
   }, [accessDeniedReason, content, fontSize, isDarkMode, parsedCommentTarget, routeInfo, scrollerRef, selectedFont]);
 
   useEffect(() => {
-    if (iframeRef.current) {
-      iframeRef.current.contentWindow?.location.reload();
-    }
-  }, [isDarkMode, selectedFont, fontSize]);
+    injectStyles(iframeRef, { isDarkMode, selectedFont, fontSize });
+  }, [content, fontSize, isDarkMode, selectedFont]);
 
   useEffect(() => {
     let cancelled = false;
@@ -761,12 +772,36 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
     ) : (
       <PatreonMessage />
     )
+  ) : isLoading ? (
+    <div role="status" className="w-full px-4 py-8 text-center" data-reader-load-state="loading">
+      Loading chapter…
+    </div>
+  ) : loadError ? (
+    <div role="alert" className="w-full px-4 py-8 text-center" data-reader-load-state="error">
+      <p>This chapter could not be loaded.</p>
+      <p className="mt-2 text-sm">{loadError}</p>
+      <button
+        type="button"
+        className="mt-4 rounded-lg bg-[#872341] px-5 py-2 font-semibold text-white"
+        onClick={() => {
+          const chapter = routeInfo?.chapter || selectedChapter;
+          const book = routeInfo?.book || selectedBook;
+          if (chapter && book && setSelectedChapter) {
+            void setSelectedChapter(book, chapter);
+          } else if (book && setSelectedBook) {
+            void setSelectedBook(book, true);
+          }
+        }}
+      >
+        Retry loading chapter
+      </button>
+    </div>
   ) : (
     <div className="w-full flex">
         <iframe
           ref={iframeRef}
           onLoad={() => {
-            injectStyles(iframeRef, { isDarkMode, selectedFont, fontSize });
+            injectStyles(iframeRef, { isDarkMode, selectedFont, fontSize }, true);
             setIsReaderFrameReady(true);
           iframeRef.current?.contentWindow?.postMessage(
             {
@@ -780,7 +815,7 @@ export const DataViewer = ({ scrollerRef }: { scrollerRef: React.RefObject<HTMLD
           });
         }}
         srcDoc={`<html><body style="margin: 0;margin-top: -16px;margin-bottom: -16px;"><div style="height:100%">${content}</div></html></body>`}
-        className="flex-grow"
+        className="block min-h-[1px] w-full flex-grow"
         title="Embedded Content"
       />
     </div>
@@ -928,14 +963,20 @@ const scrollIframeParagraphIntoScroller = (scroller: HTMLDivElement, iframe: HTM
 
 const injectStyles = (
   iframeRef: React.RefObject<HTMLIFrameElement | null>,
-  { isDarkMode, selectedFont, fontSize }: { isDarkMode: boolean; selectedFont: string; fontSize: number }
+  { isDarkMode, selectedFont, fontSize }: { isDarkMode: boolean; selectedFont: string; fontSize: number },
+  initializeEnhancements = false
 ) => {
   const iframe = iframeRef.current;
   if (iframe) {
     const iframeDocument = iframe.contentDocument;
     if (iframeDocument) {
-      const styleElement = iframeDocument.createElement('style');
-      styleElement.innerHTML = `
+      let styleElement = iframeDocument.querySelector<HTMLStyleElement>('style[data-reader-settings]');
+      if (!styleElement) {
+        styleElement = iframeDocument.createElement('style');
+        styleElement.dataset.readerSettings = 'true';
+        iframeDocument.head.appendChild(styleElement);
+      }
+      styleElement.textContent = `
         html, body { 
           margin: 0; 
           padding: 0;
@@ -1089,11 +1130,13 @@ const injectStyles = (
           outline-offset: 2px;
         }
       `;
-      iframeDocument.head.appendChild(styleElement); // Append styles to the head of the iframe's document
 
-      const scriptElement = iframeDocument.createElement('script');
-      scriptElement.textContent = dataViewerIframeScript;
-      iframeDocument.head.appendChild(scriptElement);
+      if (initializeEnhancements && !iframeDocument.querySelector('script[data-reader-enhancements]')) {
+        const scriptElement = iframeDocument.createElement('script');
+        scriptElement.dataset.readerEnhancements = 'true';
+        scriptElement.textContent = dataViewerIframeScript;
+        iframeDocument.head.appendChild(scriptElement);
+      }
     }
   }
 };

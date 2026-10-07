@@ -543,6 +543,7 @@ export const GoToThreadLoadsAnotherPage: Story = {
 
 export const GoToThreadAfterWritingParagraphComment: Story = {
   name: '7. Go to thread works after writing a paragraph comment',
+  tags: ['notification-paragraph-load-race-regression'],
   loaders: [async () => ({ commentsApiMockState: await createMixedJumpState() })],
   render: (args, { loaded }) => <FullAppHarness {...args} commentsApiMockState={loaded.commentsApiMockState as MockCommentsApiState} />,
   play: async ({ canvas, step, userEvent }) => {
@@ -558,11 +559,11 @@ export const GoToThreadAfterWritingParagraphComment: Story = {
 
       const iframe = await waitFor(() => {
         const candidate = document.querySelector('iframe[title="Embedded Content"]') as HTMLIFrameElement | null;
-        if (!candidate?.contentDocument) {
-          throw new Error('Reader iframe is not ready.');
+        if (!candidate?.contentDocument?.querySelector('p[data-paragraph-index="3"]')) {
+          throw new Error('Selected chapter paragraphs are not ready.');
         }
         return candidate;
-      });
+      }, { timeout: 10000 });
       window.dispatchEvent(
         new MessageEvent('message', {
           data: { type: 'paragraph-comment-requested', paragraphIndex: 3 },
